@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum ApplicantStatus {
+  SUBMITTED
+  INELIGIBLE
+  ELIGIBLE_PENDING_DHIS2_SYNC
+  SYNCED_TO_DHIS2_PENDING_REVIEW
+  UNDER_REVIEW
+  APPROVED_FOR_ENROLLMENT
+  REJECTED_BY_REVIEW_COMMITTEE
+  ENROLLED_IN_DHIS2_PROGRAM
+  SYNC_FAILED
+}
+
+enum RegistrationMode {
+  PHYSICAL
+  VIRTUAL
+  BOTH
+  UNKNOWN
+}
+
+enum Pathway {
+  PHYSICAL_ACADEMY
+  VIRTUAL_ACADEMY
+  DIGITAL_ENTREPRENEURSHIP
+  UNKNOWN
+}
+
+enum ResponseType {
+  TEXT
+  LONG_TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SINGLE_SELECT
+  MULTI_SELECT
+  PHONE
+  EMAIL
+  FILE
+}
+
+enum DocumentType {
+  NATIONAL_ID
+  PASSPORT
+  BIRTH_CERTIFICATE
+  MEDICAL_DOCUMENT
+  REFERRAL_LETTER
+  CONSENT_FORM
+  DISABILITY_DOCUMENT
+  EDUCATION_CERTIFICATE
+  OTHER
+}
+
+enum ReviewDecision {
+  APPROVED
+  REJECTED
+  NEEDS_MORE_INFORMATION
+}
+
+enum SyncAction {
+  CREATE_TRACKED_ENTITY
+  ENROLL_IN_PROGRAM
+  UPDATE_TRACKED_ENTITY
+}
+
+enum SyncStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Applicant {
+  id String @id @default(uuid())
+
+  /*
+    Permanent tracking identifiers
+    id = internal person UID used by the system.
+    participantCode = human-readable participant number for reports.
+    applicationReference = public reference used by applicants to check status.
+  */
+  participantCode      String? @unique
+  applicationReference String? @unique
+
+  /*
+    Core personal details from:
+    Registration Form - phy & virt
+  */
+  firstName                String
+  lastName                 String
+  contactNumber            String?
+  email                    String?
+  alternativeContactNumber String?
+
+  /*
+    Location / selection criteria
+  */
+  country   String?
+  town      String?
+  county    String?
+  subCounty String?
+
+  /*
+    Demographic fields
+  */
+  yearOfBirth    Int?
+  approximateAge Int?
+  sex            String?
+  householdSize  Int?
+
+  /*
+    Education / training
+  */
+  educationLevel                 String?
+  courseStudied                  String?
+  currentEducationStatus         String?
+  previousSightsaversTraining    Boolean?
+
+  /*
+    Disability and accessibility
+  */
+  hasDisability        Boolean @default(false)
+  disabilityType       String?
+  otherDisabilityType  String?
+  accessibilityNeeds   String? @db.Text
+  canParticipateOnline Boolean?
+  hasDeviceAccess      Boolean?
+
+  /*
+    Application and motivation
+  */
+  heardAboutProject String?
+  motivation        String? @db.Text
+
+  /*
+    Employment and career
+  */
+  employmentStatus       String?
+  jobSearchActions       String? @db.Text
+  monthlyIncomeRange     String?
+  dignifiedWorkResponse  String? @db.Text
+  careerAspirations      String? @db.Text
+  currentBusinessDetails String? @db.Text
+  preferredSector        String?
+
+  /*
+    Form metadata
+    registrationMode = how the registration/training is delivered.
+    pathway = the selected Digital Futures pathway.
+  */
+  registrationMode RegistrationMode @default(UNKNOWN)
+  pathway          Pathway          @default(UNKNOWN)
+  formName         String?          @default("Registration Form - phy & virt")
+  formVersion      String?          @default("1.0")
+
+  /*
+    Eligibility
+  */
+  isEligible        Boolean @default(false)
+  eligibilityReason String? @db.Text
+
+  /*
+    Workflow status
+  */
+  status ApplicantStatus @default(SUBMITTED)
+
+  /*
+    DHIS2 Tracker references
+    Eligible applicants are first pushed as tracked entities.
+    Enrollment happens later after review committee approval.
+  */
+  dhis2TrackedEntityId String?
+  dhis2OrgUnitId       String?
+  dhis2ProgramId       String?
+  dhis2EnrollmentId    String?
+
+  /*
+    Review committee fields
+  */
+  reviewDecision ReviewDecision?
+  reviewComments String? @db.Text
+  reviewedAt     DateTime?
+  reviewedBy     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  responses     RegistrationResponse[]
+  documents     ApplicantDocument[]
+  syncLogs      Dhis2SyncLog[]
+  statusHistory ApplicantStatusHistory[]
+
+  @@index([status])
+  @@index([country])
+  @@index([county])
+  @@index([subCounty])
+  @@index([pathway])
+  @@index([registrationMode])
+  @@index([isEligible])
+  @@index([dhis2TrackedEntityId])
+}
+
+model SequenceCounter {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  value     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ApplicantStatusHistory {
+  id          String          @id @default(uuid())
+  applicantId String
+  status      ApplicantStatus
+  note        String?         @db.Text
+  createdAt   DateTime        @default(now())
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@index([status])
+}
+
+model RegistrationResponse {
+  id String @id @default(uuid())
+
+  applicantId String
+
+  /*
+    Example question codes:
+    FIRST_NAME
+    LAST_NAME
+    CONTACT_NUMBER
+    COUNTRY
+    COUNTY
+    HAS_DISABILITY
+    DISABILITY_TYPE
+    MOTIVATION
+    EMPLOYMENT_STATUS
+  */
+  questionCode   String
+  questionNumber Int?
+  questionText   String @db.Text
+  section        String?
+
+  responseType ResponseType @default(TEXT)
+
+  /*
+    Store the answer in the most appropriate column.
+    For simple implementation, valueText can hold most answers.
+    valueJson is useful for multi-select responses.
+  */
+  valueText    String?   @db.Text
+  valueNumber  Float?
+  valueBoolean Boolean?
+  valueDate    DateTime?
+  valueJson    Json?
+
+  /*
+    Eligibility logic support
+  */
+  isEligibilityQuestion Boolean @default(false)
+  isPassing             Boolean?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@index([questionCode])
+  @@index([isEligibilityQuestion])
+}
+
+model ApplicantDocument {
+  id String @id @default(uuid())
+
+  applicantId String
+
+  documentType DocumentType @default(OTHER)
+
+  originalName String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+
+  /*
+    Local MVP: MinIO
+    Production: AWS S3
+  */
+  storageBucket String
+  storageKey    String
+  storageUrl    String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@index([documentType])
+}
+
+model Dhis2SyncLog {
+  id String @id @default(uuid())
+
+  applicantId String
+
+  action SyncAction
+  status SyncStatus @default(PENDING)
+
+  requestPayload  Json?
+  responsePayload Json?
+  errorMessage    String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@index([action])
+  @@index([status])
+}
