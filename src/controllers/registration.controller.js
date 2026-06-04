@@ -1,6 +1,8 @@
 const prisma = require("../config/prisma");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
+const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
+const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
 const {
   generateParticipantCode,
   generateApplicationReference,
@@ -75,6 +77,37 @@ function validateRequiredQuestions(responses = []) {
   }
 
   return missingQuestions;
+}
+
+async function findDuplicateApplication({ normalizedEmail, normalizedContactNumber }) {
+  const duplicateConditions = [];
+
+  if (normalizedEmail) {
+    duplicateConditions.push({ normalizedEmail });
+  }
+
+  if (normalizedContactNumber) {
+    duplicateConditions.push({ normalizedContactNumber });
+  }
+
+  if (duplicateConditions.length === 0) return null;
+
+  return prisma.applicant.findFirst({
+    where: {
+      OR: duplicateConditions,
+    },
+    select: {
+      id: true,
+      applicationReference: true,
+      participantCode: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      contactNumber: true,
+      status: true,
+      createdAt: true,
+    },
+  });
 }
 
 function calculateEligibility(responses = []) {
@@ -202,6 +235,35 @@ async function submitRegistration(req, res) {
 
     const firstName = getAnswerValue(parsedResponses, "FIRST_NAME");
     const lastName = getAnswerValue(parsedResponses, "LAST_NAME");
+    const contactNumber = getAnswerValue(parsedResponses, "CONTACT_NUMBER");
+    const email = getAnswerValue(parsedResponses, "EMAIL");
+    const normalizedContactNumber = normalizeContactNumber(contactNumber);
+    const normalizedEmail = normalizeEmail(email);
+
+    const existingApplicant = await findDuplicateApplication({
+      normalizedEmail,
+      normalizedContactNumber,
+    });
+
+    if (existingApplicant) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "This applicant appears to have already submitted an application. Please use the existing reference number to check the application status instead of re-applying.",
+        duplicate: true,
+        applicationReference: existingApplicant.applicationReference,
+        participantCode: existingApplicant.participantCode,
+        status: existingApplicant.status,
+        submittedAt: existingApplicant.createdAt,
+        data: {
+          duplicate: true,
+          applicationReference: existingApplicant.applicationReference,
+          participantCode: existingApplicant.participantCode,
+          status: existingApplicant.status,
+          submittedAt: existingApplicant.createdAt,
+        },
+      });
+    }
 
     const eligibilityResult = calculateEligibility(parsedResponses);
 
@@ -212,10 +274,10 @@ async function submitRegistration(req, res) {
     const pathway = normalizePathway(req.body.pathway);
 
     const finalStatus = eligibilityResult.isEligible
-      ? "ELIGIBLE_PENDING_DHIS2_SYNC"
+      ? "ELIGIBLE_PENDING_SKILLS_TEST"
       : "INELIGIBLE";
 
-    const applicant = await prisma.$transaction(async (tx) => {
+    const registrationResult = await prisma.$transaction(async (tx) => {
       const participantCode = await generateParticipantCode(tx);
       const applicationReference = await generateApplicationReference(tx);
 
@@ -226,8 +288,10 @@ async function submitRegistration(req, res) {
 
           firstName,
           lastName,
-          contactNumber: getAnswerValue(parsedResponses, "CONTACT_NUMBER"),
-          email: getAnswerValue(parsedResponses, "EMAIL"),
+          contactNumber,
+          email,
+          normalizedContactNumber,
+          normalizedEmail,
           alternativeContactNumber: getAnswerValue(
             parsedResponses,
             "ALTERNATIVE_CONTACT_NUMBER"
@@ -355,8 +419,37 @@ async function submitRegistration(req, res) {
         },
       });
 
-      return createdApplicant;
+      let testInvitationData = null;
+
+      if (eligibilityResult.isEligible) {
+        testInvitationData = await createBasicSkillsTestInvitation(tx, createdApplicant);
+
+        await tx.applicantStatusHistory.create({
+          data: {
+            applicantId: createdApplicant.id,
+            status: finalStatus,
+            note: "Basic IT skills test invitation created. The invitation link is tied to this applicant record.",
+          },
+        });
+      }
+
+      return {
+        applicant: createdApplicant,
+        testInvitationData,
+      };
     });
+
+    const applicant = registrationResult.applicant;
+    const testInvitationData = registrationResult.testInvitationData;
+
+    let testInvitationEmailResult = null;
+
+    if (testInvitationData?.invitation) {
+      testInvitationEmailResult = await sendBasicSkillsTestInvitation(
+        applicant,
+        testInvitationData.invitation
+      );
+    }
 
     const uploadedDocuments = [];
 
@@ -400,6 +493,14 @@ async function submitRegistration(req, res) {
       status: applicant.status,
       eligibilityReason: applicant.eligibilityReason,
       documentsUploaded: uploadedDocuments.length,
+      requiresBasicSkillsTest: applicant.isEligible,
+      skillsTestUrl: null,
+      skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
+      testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
+      testInvitationEmailStatus: testInvitationEmailResult?.status || null,
+      nextStepMessage: applicant.isEligible
+        ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+        : "Your registration was received and will remain in the system for project records.",
 
       // New tracking fields.
       personUid: applicant.id,
@@ -418,11 +519,28 @@ async function submitRegistration(req, res) {
         status: applicant.status,
         eligibilityReason: applicant.eligibilityReason,
         documentsUploaded: uploadedDocuments.length,
+        requiresBasicSkillsTest: applicant.isEligible,
+        skillsTestUrl: null,
+        skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
+        testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
+        testInvitationEmailStatus: testInvitationEmailResult?.status || null,
+        nextStepMessage: applicant.isEligible
+          ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+          : "Your registration was received and will remain in the system for project records.",
         submittedAt: applicant.createdAt,
       },
     });
   } catch (error) {
     console.error("Registration submission error:", error);
+
+    if (error.code === "P2002") {
+      return res.status(409).json({
+        success: false,
+        duplicate: true,
+        message:
+          "This applicant appears to have already submitted an application. Please check your existing application status instead of re-applying.",
+      });
+    }
 
     return res.status(500).json({
       message: "Failed to submit registration.",
@@ -444,6 +562,24 @@ async function getApplicants(req, res) {
         statusHistory: {
           orderBy: {
             createdAt: "asc",
+          },
+        },
+        skillsTestAttempts: {
+          orderBy: {
+            submittedAt: "desc",
+          },
+          include: {
+            answers: {
+              orderBy: {
+                questionCode: "asc",
+              },
+            },
+            invitation: true,
+          },
+        },
+        skillsTestInvitations: {
+          orderBy: {
+            createdAt: "desc",
           },
         },
       },
@@ -475,6 +611,24 @@ async function getApplicantById(req, res) {
             createdAt: "asc",
           },
         },
+        skillsTestAttempts: {
+          orderBy: {
+            submittedAt: "desc",
+          },
+          include: {
+            answers: {
+              orderBy: {
+                questionCode: "asc",
+              },
+            },
+            invitation: true,
+          },
+        },
+        skillsTestInvitations: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
       },
     });
 
@@ -502,6 +656,10 @@ function getNextStepMessage(status) {
       "Your application has been received and is waiting for eligibility review.",
     INELIGIBLE:
       "Your application was received but did not meet the initial eligibility criteria.",
+    ELIGIBLE_PENDING_SKILLS_TEST:
+      "Your application passed the initial eligibility check. Please check your email for the Basic IT skills test invitation link.",
+    SKILLS_TEST_COMPLETED_PENDING_REVIEW:
+      "Your basic IT skills test has been submitted. Your registration and test results are ready for committee review.",
     ELIGIBLE_PENDING_DHIS2_SYNC:
       "Your application passed the initial eligibility check and is waiting to be synced to DHIS2.",
     SYNCED_TO_DHIS2_PENDING_REVIEW:
@@ -544,6 +702,16 @@ async function getRegistrationStatus(req, res) {
             createdAt: "asc",
           },
         },
+        skillsTestAttempts: {
+          orderBy: {
+            submittedAt: "desc",
+          },
+        },
+        skillsTestInvitations: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
       },
     });
 
@@ -566,6 +734,28 @@ async function getRegistrationStatus(req, res) {
         submittedAt: applicant.createdAt,
         lastUpdatedAt: applicant.updatedAt,
         dhis2Synced: Boolean(applicant.dhis2TrackedEntityId),
+        requiresBasicSkillsTest:
+          applicant.isEligible && applicant.skillsTestAttempts.length === 0,
+        testInvitation: applicant.skillsTestInvitations?.[0]
+          ? {
+              status: applicant.skillsTestInvitations[0].status,
+              emailTo: applicant.skillsTestInvitations[0].emailTo,
+              sentAt: applicant.skillsTestInvitations[0].sentAt,
+              expiresAt: applicant.skillsTestInvitations[0].expiresAt,
+              openedAt: applicant.skillsTestInvitations[0].openedAt,
+              usedAt: applicant.skillsTestInvitations[0].usedAt,
+            }
+          : null,
+        skillsTest: applicant.skillsTestAttempts[0]
+          ? {
+              submitted: true,
+              score: applicant.skillsTestAttempts[0].score,
+              maxScore: applicant.skillsTestAttempts[0].maxScore,
+              percentage: applicant.skillsTestAttempts[0].percentage,
+              passed: applicant.skillsTestAttempts[0].passed,
+              submittedAt: applicant.skillsTestAttempts[0].submittedAt,
+            }
+          : { submitted: false },
         timeline: applicant.statusHistory.map((item) => ({
           status: item.status,
           note: item.note,

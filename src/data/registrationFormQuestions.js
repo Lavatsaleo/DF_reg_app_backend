@@ -38,7 +38,7 @@ const registrationFormQuestions = [
     questionText: "Email address",
     section: "Personal Details",
     responseType: "EMAIL",
-    required: false,
+    required: true,
     isEligibilityQuestion: false,
     options: [],
     showIf: null,

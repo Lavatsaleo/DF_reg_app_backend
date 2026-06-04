@@ -10,6 +10,8 @@ datasource db {
 enum ApplicantStatus {
   SUBMITTED
   INELIGIBLE
+  ELIGIBLE_PENDING_SKILLS_TEST
+  SKILLS_TEST_COMPLETED_PENDING_REVIEW
   ELIGIBLE_PENDING_DHIS2_SYNC
   SYNCED_TO_DHIS2_PENDING_REVIEW
   UNDER_REVIEW
@@ -76,6 +78,20 @@ enum SyncStatus {
   FAILED
 }
 
+enum BasicSkillsTestAttemptStatus {
+  SUBMITTED
+}
+
+enum BasicSkillsTestInvitationStatus {
+  PENDING
+  SENT
+  EMAIL_FAILED
+  OPENED
+  USED
+  EXPIRED
+  CANCELLED
+}
+
 model Applicant {
   id String @id @default(uuid())
 
@@ -97,6 +113,13 @@ model Applicant {
   contactNumber            String?
   email                    String?
   alternativeContactNumber String?
+
+  /*
+    Normalized fields are used to prevent duplicate applications even when
+    applicants type spaces, mixed case emails, or formatted phone numbers.
+  */
+  normalizedEmail         String? @unique
+  normalizedContactNumber String? @unique
 
   /*
     Location / selection criteria
@@ -191,10 +214,12 @@ model Applicant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  responses     RegistrationResponse[]
-  documents     ApplicantDocument[]
-  syncLogs      Dhis2SyncLog[]
-  statusHistory ApplicantStatusHistory[]
+  responses          RegistrationResponse[]
+  documents          ApplicantDocument[]
+  syncLogs           Dhis2SyncLog[]
+  statusHistory      ApplicantStatusHistory[]
+  skillsTestAttempts    BasicSkillsTestAttempt[]
+  skillsTestInvitations BasicSkillsTestInvitation[]
 
   @@index([status])
   @@index([country])
@@ -325,4 +350,93 @@ model Dhis2SyncLog {
   @@index([applicantId])
   @@index([action])
   @@index([status])
+}
+
+
+model BasicSkillsTestInvitation {
+  id String @id @default(uuid())
+
+  applicantId String
+
+  /*
+    The raw token is only sent in the email link. The database stores only
+    the SHA-256 hash so the invitation cannot be recovered from the DB.
+  */
+  tokenHash String @unique
+
+  emailTo       String?
+  invitationUrl String? @db.Text
+
+  status BasicSkillsTestInvitationStatus @default(PENDING)
+
+  sentAt     DateTime?
+  openedAt   DateTime?
+  usedAt     DateTime?
+  expiresAt  DateTime
+  emailError String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicant Applicant                @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  attempts  BasicSkillsTestAttempt[]
+
+  @@index([applicantId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([sentAt])
+}
+
+model BasicSkillsTestAttempt {
+  id String @id @default(uuid())
+
+  applicantId   String
+  invitationId  String? @unique
+
+  attemptNumber Int @default(1)
+  status        BasicSkillsTestAttemptStatus @default(SUBMITTED)
+
+  score             Float   @default(0)
+  maxScore          Float   @default(0)
+  percentage        Float   @default(0)
+  passed            Boolean @default(false)
+  passingPercentage Float   @default(50)
+
+  submittedAt     DateTime @default(now())
+  durationSeconds Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicant  Applicant                  @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  invitation BasicSkillsTestInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
+  answers    BasicSkillsTestAnswer[]
+
+  @@unique([applicantId, attemptNumber])
+  @@index([applicantId])
+  @@index([passed])
+  @@index([submittedAt])
+}
+
+model BasicSkillsTestAnswer {
+  id String @id @default(uuid())
+
+  attemptId String
+
+  questionCode   String
+  questionText   String @db.Text
+  category       String?
+  selectedAnswer String @db.Text
+  correctAnswer  String @db.Text
+  isCorrect      Boolean @default(false)
+  pointsAwarded  Float   @default(0)
+  pointsPossible Float   @default(1)
+
+  createdAt DateTime @default(now())
+
+  attempt BasicSkillsTestAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@index([questionCode])
+  @@index([isCorrect])
 }
