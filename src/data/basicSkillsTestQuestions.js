@@ -1,4 +1,5 @@
 const BASIC_SKILLS_TEST_PASSING_PERCENTAGE = 50;
+const BASIC_SKILLS_TEST_VERSION = "BASIC_IT_SKILLS_V1";
 
 const basicSkillsTestQuestions = [
   {
@@ -155,6 +156,7 @@ function getQuestionByCode(questionCode) {
 
 module.exports = {
   BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
+  BASIC_SKILLS_TEST_VERSION,
   basicSkillsTestQuestions,
   getPublicBasicSkillsTestQuestions,
   getQuestionByCode,

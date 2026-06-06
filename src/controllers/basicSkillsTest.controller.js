@@ -1,6 +1,7 @@
 const prisma = require("../config/prisma");
 const {
   BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
+  BASIC_SKILLS_TEST_VERSION,
   basicSkillsTestQuestions,
   getPublicBasicSkillsTestQuestions,
 } = require("../data/basicSkillsTestQuestions");
@@ -34,6 +35,7 @@ function summarizeAttempt(attempt) {
     passingPercentage: attempt.passingPercentage,
     submittedAt: attempt.submittedAt,
     durationSeconds: attempt.durationSeconds,
+    testVersion: attempt.testVersion || BASIC_SKILLS_TEST_VERSION,
     answers: attempt.answers || undefined,
   };
 }
@@ -77,6 +79,7 @@ function getTestMetadata(questions) {
       0
     ),
     passingPercentage: BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
+    testVersion: BASIC_SKILLS_TEST_VERSION,
     questions,
   };
 }
@@ -426,6 +429,7 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
         passed: result.passed,
         passingPercentage: BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
         durationSeconds,
+        testVersion: BASIC_SKILLS_TEST_VERSION,
         answers: {
           create: result.answerRecords,
         },

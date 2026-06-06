@@ -9,6 +9,7 @@ datasource db {
 
 enum ApplicantStatus {
   SUBMITTED
+  PENDING_REVIEW
   INELIGIBLE
   ELIGIBLE_PENDING_SKILLS_TEST
   SKILLS_TEST_COMPLETED_PENDING_REVIEW
@@ -132,8 +133,10 @@ model Applicant {
   /*
     Demographic fields
   */
-  yearOfBirth    Int?
-  approximateAge Int?
+  dateOfBirth      DateTime?
+  yearOfBirth     Int?
+  approximateAge  Int?
+  ageAtApplication Int?
   sex            String?
   householdSize  Int?
 
@@ -185,8 +188,15 @@ model Applicant {
   /*
     Eligibility
   */
-  isEligible        Boolean @default(false)
-  eligibilityReason String? @db.Text
+  isEligible             Boolean @default(false)
+  eligibilityReason      String? @db.Text
+  screeningStatus        String?  @default("PENDING_REVIEW")
+  screeningVersion       String?  @default("PHYSICAL_ACADEMY_V1")
+  screenedAt             DateTime?
+  eligibilityReasonCodes Json?
+  eligibilityDetails     Json?
+  possibleDuplicateOfApplicantId String?
+  duplicateCheckStatus   String?  @default("NO_MATCH")
 
   /*
     Workflow status
@@ -206,6 +216,12 @@ model Applicant {
   /*
     Review committee fields
   */
+  nextOfKinName         String?
+  nextOfKinPhone        String?
+  nextOfKinRelationship String?
+  preferredContactMethod String?
+  consentedAt           DateTime?
+
   reviewDecision ReviewDecision?
   reviewComments String? @db.Text
   reviewedAt     DateTime?
@@ -228,6 +244,10 @@ model Applicant {
   @@index([pathway])
   @@index([registrationMode])
   @@index([isEligible])
+  @@index([screeningStatus])
+  @@index([screenedAt])
+  @@index([duplicateCheckStatus])
+  @@index([possibleDuplicateOfApplicantId])
   @@index([dhis2TrackedEntityId])
 }
 
@@ -404,6 +424,7 @@ model BasicSkillsTestAttempt {
 
   submittedAt     DateTime @default(now())
   durationSeconds Int?
+  testVersion     String? @default("BASIC_IT_SKILLS_V1")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

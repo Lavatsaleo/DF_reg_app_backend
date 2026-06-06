@@ -54,11 +54,80 @@ function getAnswerValue(responses, code) {
   return response ? response.answer : null;
 }
 
+function normalizeBoolean(value) {
+  const booleanValue = toBoolean(value);
+  return booleanValue === null ? value : booleanValue;
+}
+
+function isQuestionVisible(question, responses = []) {
+  if (!question.showIf) return true;
+
+  const controllingAnswer = getAnswerValue(responses, question.showIf.questionCode);
+  const expectedValue = question.showIf.value;
+  const operator = question.showIf.operator;
+
+  const normalizedAnswer = normalizeBoolean(controllingAnswer);
+  const normalizedExpected = normalizeBoolean(expectedValue);
+
+  if (operator === "equals") {
+    return normalizedAnswer === normalizedExpected;
+  }
+
+  if (operator === "contains") {
+    if (Array.isArray(controllingAnswer)) {
+      return controllingAnswer.includes(expectedValue);
+    }
+
+    if (typeof controllingAnswer === "string") {
+      return controllingAnswer.includes(expectedValue);
+    }
+
+    return false;
+  }
+
+  return true;
+}
+
+function isValidPersonName(value) {
+  const textValue = String(value || "").trim();
+
+  // Allow letters from all languages, spaces, apostrophes, hyphens, and periods.
+  // At least one letter is required and numbers are never accepted.
+  return /^(?=.*\p{L})[\p{L}\p{M}\s'.-]+$/u.test(textValue);
+}
+
+function validateQuestionFormats(responses = []) {
+  const invalidQuestions = [];
+
+  for (const question of registrationFormQuestions) {
+    if (!isQuestionVisible(question, responses)) continue;
+
+    const answer = getAnswerValue(responses, question.questionCode);
+    const isEmpty =
+      answer === undefined ||
+      answer === null ||
+      answer === "" ||
+      (Array.isArray(answer) && answer.length === 0);
+
+    if (isEmpty) continue;
+
+    if (question.validationType === "PERSON_NAME" && !isValidPersonName(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must contain letters only. Numbers are not allowed.`,
+      });
+    }
+  }
+
+  return invalidQuestions;
+}
+
 function validateRequiredQuestions(responses = []) {
   const missingQuestions = [];
 
   for (const question of registrationFormQuestions) {
-    if (!question.required) continue;
+    if (!question.required || !isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
 
@@ -105,38 +174,234 @@ async function findDuplicateApplication({ normalizedEmail, normalizedContactNumb
       email: true,
       contactNumber: true,
       status: true,
+      pathway: true,
+      registrationMode: true,
+      screeningStatus: true,
       createdAt: true,
     },
   });
 }
 
-function calculateEligibility(responses = []) {
-  const hasDisabilityAnswer = getAnswerValue(responses, "HAS_DISABILITY");
-  const consentAnswer = getAnswerValue(responses, "REGISTRATION_CONSENT");
+const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_3";
+const REGISTRATION_FORM_VERSION = "1.2";
+// Current requirement: applicants must be 34 years old or below at the date of application.
+const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 34);
+const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
+const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
 
-  const hasDisability = toBoolean(hasDisabilityAnswer);
-  const hasConsent = toBoolean(consentAnswer);
+function parseDate(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 
-  if (hasDisability !== true) {
-    return {
-      isEligible: false,
-      reason:
-        "Applicant is not eligible because they did not indicate that they have a disability.",
-    };
+function calculateAgeFromDateOfBirth(dateOfBirth, applicationDate = new Date()) {
+  if (!dateOfBirth) return null;
+
+  let age = applicationDate.getFullYear() - dateOfBirth.getFullYear();
+  const monthDifference = applicationDate.getMonth() - dateOfBirth.getMonth();
+
+  if (
+    monthDifference < 0 ||
+    (monthDifference === 0 && applicationDate.getDate() < dateOfBirth.getDate())
+  ) {
+    age -= 1;
   }
 
-  if (hasConsent !== true) {
+  return age;
+}
+
+function getAgeEvidence(responses = [], applicationDate = new Date()) {
+  const dateOfBirth = parseDate(getAnswerValue(responses, "DATE_OF_BIRTH"));
+
+  if (dateOfBirth) {
     return {
-      isEligible: false,
-      reason:
-        "Applicant is not eligible because they did not provide consent for registration, review, and project follow-up.",
+      source: "DATE_OF_BIRTH",
+      dateOfBirth,
+      yearOfBirth: dateOfBirth.getFullYear(),
+      ageAtApplication: calculateAgeFromDateOfBirth(dateOfBirth, applicationDate),
     };
   }
 
   return {
-    isEligible: true,
-    reason:
-      "Applicant passed the initial eligibility criteria: disability status confirmed and consent provided.",
+    source: null,
+    dateOfBirth: null,
+    yearOfBirth: null,
+    ageAtApplication: null,
+  };
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getDisabilityEvidence(responses = []) {
+  const hasDisabilityAnswer = getAnswerValue(responses, "HAS_DISABILITY");
+  const registrationStatusAnswer = getAnswerValue(
+    responses,
+    "DISABILITY_REGISTRATION_STATUS"
+  );
+
+  const booleanValue = toBoolean(hasDisabilityAnswer);
+  const registrationStatus = normalizeText(registrationStatusAnswer);
+
+  const indicatesDisabilityByStatus =
+    registrationStatus.includes("registered") ||
+    registrationStatus.includes("not registered") ||
+    registrationStatus.includes("unregistered") ||
+    registrationStatus.startsWith("yes");
+
+  const indicatesNoDisabilityByStatus =
+    registrationStatus === "no" ||
+    registrationStatus.includes("no disability") ||
+    registrationStatus.includes("not disabled");
+
+  let hasDisability = booleanValue;
+
+  if (hasDisability === null && indicatesDisabilityByStatus) {
+    hasDisability = true;
+  }
+
+  if (hasDisability === null && indicatesNoDisabilityByStatus) {
+    hasDisability = false;
+  }
+
+  return {
+    hasDisability,
+    registrationStatus: registrationStatusAnswer || null,
+    isRegisteredPwd:
+      registrationStatus.includes("registered") &&
+      !registrationStatus.includes("not registered") &&
+      !registrationStatus.includes("unregistered"),
+    isUnregisteredPwd:
+      registrationStatus.includes("not registered") ||
+      registrationStatus.includes("unregistered"),
+  };
+}
+
+function validateSubmissionConsent(responses = []) {
+  const hasConsent = toBoolean(getAnswerValue(responses, "REGISTRATION_CONSENT"));
+
+  if (hasConsent !== true) {
+    return {
+      valid: false,
+      message:
+        "Consent is required before the application can be submitted. Consent is not treated as an eligibility score; it is a submission requirement.",
+    };
+  }
+
+  return { valid: true };
+}
+
+function calculateEligibility(responses = [], applicationDate = new Date()) {
+  const reasonCodes = [];
+  const criterionResults = {};
+  const ageEvidence = getAgeEvidence(responses, applicationDate);
+  const disabilityEvidence = getDisabilityEvidence(responses);
+
+  criterionResults.age = {
+    source: ageEvidence.source,
+    ageAtApplication: ageEvidence.ageAtApplication,
+    maxEligibleAge: MAX_ELIGIBLE_AGE,
+    rule: "34_YEARS_AND_BELOW",
+    passed:
+      ageEvidence.ageAtApplication !== null &&
+      ageEvidence.ageAtApplication <= MAX_ELIGIBLE_AGE,
+  };
+
+  if (ageEvidence.ageAtApplication === null) {
+    reasonCodes.push("MISSING_AGE_INFORMATION");
+  } else if (
+    ageEvidence.ageAtApplication < MIN_REASONABLE_AGE ||
+    ageEvidence.ageAtApplication > MAX_REASONABLE_AGE
+  ) {
+    reasonCodes.push("AGE_DATA_OUTLIER");
+  } else if (ageEvidence.ageAtApplication > MAX_ELIGIBLE_AGE) {
+    reasonCodes.push("OVER_AGE");
+  }
+
+  criterionResults.disability = {
+    hasDisability: disabilityEvidence.hasDisability,
+    registrationStatus: disabilityEvidence.registrationStatus,
+    passed: disabilityEvidence.hasDisability === true,
+  };
+
+  const normalizedDisabilityRegistrationStatus = normalizeText(
+    disabilityEvidence.registrationStatus
+  );
+
+  if (disabilityEvidence.hasDisability === false) {
+    reasonCodes.push("NO_DISABILITY");
+  } else if (disabilityEvidence.hasDisability === null) {
+    reasonCodes.push("DISABILITY_STATUS_UNCONFIRMED");
+  }
+
+  if (
+    disabilityEvidence.hasDisability === true &&
+    !normalizedDisabilityRegistrationStatus
+  ) {
+    reasonCodes.push("DISABILITY_REGISTRATION_STATUS_MISSING");
+  }
+
+  if (
+    normalizedDisabilityRegistrationStatus.includes("not sure") ||
+    normalizedDisabilityRegistrationStatus.includes("prefer not")
+  ) {
+    reasonCodes.push("DISABILITY_REGISTRATION_STATUS_UNCONFIRMED");
+  }
+
+  if (disabilityEvidence.isUnregisteredPwd) {
+    reasonCodes.push("UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW");
+  }
+
+  if (
+    disabilityEvidence.hasDisability === true &&
+    normalizedDisabilityRegistrationStatus === "no"
+  ) {
+    reasonCodes.push("DISABILITY_STATUS_CONFLICT");
+  }
+
+  const blockingReasonCodes = ["OVER_AGE", "NO_DISABILITY"];
+  const pendingReasonCodes = [
+    "MISSING_AGE_INFORMATION",
+    "AGE_DATA_OUTLIER",
+    "DISABILITY_STATUS_UNCONFIRMED",
+    "DISABILITY_REGISTRATION_STATUS_MISSING",
+    "DISABILITY_REGISTRATION_STATUS_UNCONFIRMED",
+    "UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW",
+    "DISABILITY_STATUS_CONFLICT",
+  ];
+
+  let screeningStatus = "ELIGIBLE";
+
+  if (reasonCodes.some((code) => blockingReasonCodes.includes(code))) {
+    screeningStatus = "NOT_ELIGIBLE";
+  } else if (reasonCodes.some((code) => pendingReasonCodes.includes(code))) {
+    screeningStatus = "PENDING_REVIEW";
+  }
+
+  const isEligible = screeningStatus === "ELIGIBLE";
+
+  const reasonMessages = {
+    ELIGIBLE:
+      "Applicant passed the initial eligibility screening and can be invited to complete the Basic IT skills test.",
+    NOT_ELIGIBLE:
+      "Applicant did not meet the initial eligibility criteria. The application has still been saved for programme records and reporting.",
+    PENDING_REVIEW:
+      "Applicant requires manual eligibility review before a Basic IT skills test invitation is sent.",
+  };
+
+  return {
+    isEligible,
+    screeningStatus,
+    screeningVersion: ELIGIBILITY_SCREENING_VERSION,
+    screenedAt: applicationDate,
+    ageAtApplication: ageEvidence.ageAtApplication,
+    dateOfBirth: ageEvidence.dateOfBirth,
+    yearOfBirth: ageEvidence.yearOfBirth,
+    reasonCodes,
+    criterionResults,
+    reason: reasonMessages[screeningStatus],
   };
 }
 
@@ -200,11 +465,20 @@ function buildResponseRecord(applicantId, response) {
     valueJson,
     isEligibilityQuestion: questionDefinition?.isEligibilityQuestion || false,
     isPassing:
-      response.questionCode === "HAS_DISABILITY" ||
-      response.questionCode === "REGISTRATION_CONSENT"
+      response.questionCode === "HAS_DISABILITY"
         ? toBoolean(rawAnswer) === true
         : null,
   };
+}
+
+
+async function getRegistrationFormQuestions(req, res) {
+  return res.json({
+    success: true,
+    formVersion: REGISTRATION_FORM_VERSION,
+    screeningVersion: ELIGIBILITY_SCREENING_VERSION,
+    questions: registrationFormQuestions,
+  });
 }
 
 async function submitRegistration(req, res) {
@@ -233,6 +507,25 @@ async function submitRegistration(req, res) {
       });
     }
 
+    const invalidQuestions = validateQuestionFormats(parsedResponses);
+
+    if (invalidQuestions.length > 0) {
+      return res.status(400).json({
+        message: "Some responses are not in the expected format.",
+        invalidQuestions,
+      });
+    }
+
+    const consentCheck = validateSubmissionConsent(parsedResponses);
+
+    if (!consentCheck.valid) {
+      return res.status(400).json({
+        success: false,
+        message: consentCheck.message,
+        reasonCode: "CONSENT_REQUIRED",
+      });
+    }
+
     const firstName = getAnswerValue(parsedResponses, "FIRST_NAME");
     const lastName = getAnswerValue(parsedResponses, "LAST_NAME");
     const contactNumber = getAnswerValue(parsedResponses, "CONTACT_NUMBER");
@@ -246,20 +539,45 @@ async function submitRegistration(req, res) {
     });
 
     if (existingApplicant) {
+      const canTrackExistingApplication = existingApplicant.status !== "INELIGIBLE";
+
       return res.status(409).json({
         success: false,
-        message:
-          "This applicant appears to have already submitted an application. Please use the existing reference number to check the application status instead of re-applying.",
         duplicate: true,
-        applicationReference: existingApplicant.applicationReference,
-        participantCode: existingApplicant.participantCode,
-        status: existingApplicant.status,
+        existingApplicationOpened: true,
+        message: "This application already exists.",
+        hideApplicationReference: !canTrackExistingApplication,
+        allowStatusCheck: canTrackExistingApplication,
+        applicationReference: canTrackExistingApplication
+          ? existingApplicant.applicationReference
+          : null,
+        participantCode: canTrackExistingApplication
+          ? existingApplicant.participantCode
+          : null,
+        status: canTrackExistingApplication ? existingApplicant.status : null,
+        pathway: existingApplicant.pathway,
+        registrationMode: existingApplicant.registrationMode,
+        screeningStatus: canTrackExistingApplication
+          ? existingApplicant.screeningStatus
+          : "NOT_ELIGIBLE",
         submittedAt: existingApplicant.createdAt,
         data: {
           duplicate: true,
-          applicationReference: existingApplicant.applicationReference,
-          participantCode: existingApplicant.participantCode,
-          status: existingApplicant.status,
+          existingApplicationOpened: true,
+          hideApplicationReference: !canTrackExistingApplication,
+          allowStatusCheck: canTrackExistingApplication,
+          applicationReference: canTrackExistingApplication
+            ? existingApplicant.applicationReference
+            : null,
+          participantCode: canTrackExistingApplication
+            ? existingApplicant.participantCode
+            : null,
+          status: canTrackExistingApplication ? existingApplicant.status : null,
+          pathway: existingApplicant.pathway,
+          registrationMode: existingApplicant.registrationMode,
+          screeningStatus: canTrackExistingApplication
+            ? existingApplicant.screeningStatus
+            : "NOT_ELIGIBLE",
           submittedAt: existingApplicant.createdAt,
         },
       });
@@ -273,9 +591,12 @@ async function submitRegistration(req, res) {
 
     const pathway = normalizePathway(req.body.pathway);
 
-    const finalStatus = eligibilityResult.isEligible
-      ? "ELIGIBLE_PENDING_SKILLS_TEST"
-      : "INELIGIBLE";
+    const finalStatus =
+      eligibilityResult.screeningStatus === "ELIGIBLE"
+        ? "ELIGIBLE_PENDING_SKILLS_TEST"
+        : eligibilityResult.screeningStatus === "PENDING_REVIEW"
+          ? "PENDING_REVIEW"
+          : "INELIGIBLE";
 
     const registrationResult = await prisma.$transaction(async (tx) => {
       const participantCode = await generateParticipantCode(tx);
@@ -302,13 +623,13 @@ async function submitRegistration(req, res) {
           county: getAnswerValue(parsedResponses, "COUNTY"),
           subCounty: getAnswerValue(parsedResponses, "SUB_COUNTY"),
 
-          yearOfBirth: getAnswerValue(parsedResponses, "YEAR_OF_BIRTH")
-            ? Number(getAnswerValue(parsedResponses, "YEAR_OF_BIRTH"))
-            : null,
+          dateOfBirth: eligibilityResult.dateOfBirth,
 
-          approximateAge: getAnswerValue(parsedResponses, "APPROXIMATE_AGE")
-            ? Number(getAnswerValue(parsedResponses, "APPROXIMATE_AGE"))
-            : null,
+          yearOfBirth: eligibilityResult.yearOfBirth,
+
+          approximateAge: null,
+
+          ageAtApplication: eligibilityResult.ageAtApplication,
 
           sex: getAnswerValue(parsedResponses, "SEX"),
 
@@ -323,8 +644,7 @@ async function submitRegistration(req, res) {
             "CURRENT_EDUCATION_STATUS"
           ),
 
-          hasDisability:
-            toBoolean(getAnswerValue(parsedResponses, "HAS_DISABILITY")) || false,
+          hasDisability: eligibilityResult.criterionResults.disability.hasDisability === true,
 
           disabilityType: Array.isArray(
             getAnswerValue(parsedResponses, "DISABILITY_TYPE")
@@ -354,6 +674,18 @@ async function submitRegistration(req, res) {
             parsedResponses,
             "HEARD_ABOUT_PROJECT"
           ),
+
+          nextOfKinName: getAnswerValue(parsedResponses, "NEXT_OF_KIN_NAME"),
+          nextOfKinPhone: getAnswerValue(parsedResponses, "NEXT_OF_KIN_PHONE"),
+          nextOfKinRelationship: getAnswerValue(
+            parsedResponses,
+            "NEXT_OF_KIN_RELATIONSHIP"
+          ),
+          preferredContactMethod: getAnswerValue(
+            parsedResponses,
+            "PREFERRED_CONTACT_METHOD"
+          ),
+          consentedAt: eligibilityResult.screenedAt,
 
           previousSightsaversTraining: toBoolean(
             getAnswerValue(parsedResponses, "PREVIOUS_SIGHTSAVERS_TRAINING")
@@ -388,9 +720,16 @@ async function submitRegistration(req, res) {
 
           registrationMode,
           pathway,
+          formVersion: REGISTRATION_FORM_VERSION,
 
           isEligible: eligibilityResult.isEligible,
           eligibilityReason: eligibilityResult.reason,
+          screeningStatus: eligibilityResult.screeningStatus,
+          screeningVersion: eligibilityResult.screeningVersion,
+          screenedAt: eligibilityResult.screenedAt,
+          eligibilityReasonCodes: eligibilityResult.reasonCodes,
+          eligibilityDetails: eligibilityResult.criterionResults,
+          duplicateCheckStatus: "NO_MATCH",
           status: finalStatus,
         },
       });
@@ -481,52 +820,86 @@ async function submitRegistration(req, res) {
       }
     }
 
+    const canTrackApplication = applicant.status !== "INELIGIBLE";
+    const publicApplicationReference = canTrackApplication
+      ? applicant.applicationReference
+      : null;
+    const publicParticipantCode = canTrackApplication
+      ? applicant.participantCode
+      : null;
+    const publicEligibilityReason = canTrackApplication
+      ? applicant.eligibilityReason
+      : null;
+    const publicMessage = canTrackApplication
+      ? "Registration submitted successfully."
+      : "Unfortunately, you are not eligible for this programme at this time.";
+
     return res.status(201).json({
       success: true,
-      message: "Registration submitted successfully.",
+      message: publicMessage,
+      hideApplicationReference: !canTrackApplication,
+      allowStatusCheck: canTrackApplication,
 
       // Existing response fields kept so the current frontend does not break.
-      applicantId: applicant.id,
+      applicantId: canTrackApplication ? applicant.id : null,
       pathway: applicant.pathway,
       registrationMode: applicant.registrationMode,
       isEligible: applicant.isEligible,
       status: applicant.status,
-      eligibilityReason: applicant.eligibilityReason,
+      eligibilityReason: publicEligibilityReason,
+      screeningStatus: applicant.screeningStatus,
+      screeningVersion: applicant.screeningVersion,
+      ageAtApplication: applicant.ageAtApplication,
+      eligibilityReasonCodes: canTrackApplication ? applicant.eligibilityReasonCodes : [],
+      eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
       documentsUploaded: uploadedDocuments.length,
       requiresBasicSkillsTest: applicant.isEligible,
       skillsTestUrl: null,
       skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
       testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
       testInvitationEmailStatus: testInvitationEmailResult?.status || null,
-      nextStepMessage: applicant.isEligible
-        ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-        : "Your registration was received and will remain in the system for project records.",
+      nextStepMessage:
+        applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
+          ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+          : applicant.status === "PENDING_REVIEW"
+            ? "Your application requires a manual review before the next step."
+            : "Unfortunately, you are not eligible for this programme at this time.",
 
       // New tracking fields.
-      personUid: applicant.id,
-      participantCode: applicant.participantCode,
-      applicationReference: applicant.applicationReference,
+      personUid: canTrackApplication ? applicant.id : null,
+      participantCode: publicParticipantCode,
+      applicationReference: publicApplicationReference,
       submittedAt: applicant.createdAt,
 
       data: {
-        applicantId: applicant.id,
-        personUid: applicant.id,
-        participantCode: applicant.participantCode,
-        applicationReference: applicant.applicationReference,
+        applicantId: canTrackApplication ? applicant.id : null,
+        hideApplicationReference: !canTrackApplication,
+        allowStatusCheck: canTrackApplication,
+        personUid: canTrackApplication ? applicant.id : null,
+        participantCode: publicParticipantCode,
+        applicationReference: publicApplicationReference,
         pathway: applicant.pathway,
         registrationMode: applicant.registrationMode,
         isEligible: applicant.isEligible,
         status: applicant.status,
-        eligibilityReason: applicant.eligibilityReason,
+        eligibilityReason: publicEligibilityReason,
+        screeningStatus: applicant.screeningStatus,
+        screeningVersion: applicant.screeningVersion,
+        ageAtApplication: applicant.ageAtApplication,
+        eligibilityReasonCodes: canTrackApplication ? applicant.eligibilityReasonCodes : [],
+        eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
         documentsUploaded: uploadedDocuments.length,
         requiresBasicSkillsTest: applicant.isEligible,
         skillsTestUrl: null,
         skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
         testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
         testInvitationEmailStatus: testInvitationEmailResult?.status || null,
-        nextStepMessage: applicant.isEligible
-          ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-          : "Your registration was received and will remain in the system for project records.",
+        nextStepMessage:
+          applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
+            ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+            : applicant.status === "PENDING_REVIEW"
+              ? "Your application requires a manual review before the next step."
+              : "Unfortunately, you are not eligible for this programme at this time.",
         submittedAt: applicant.createdAt,
       },
     });
@@ -537,8 +910,10 @@ async function submitRegistration(req, res) {
       return res.status(409).json({
         success: false,
         duplicate: true,
-        message:
-          "This applicant appears to have already submitted an application. Please check your existing application status instead of re-applying.",
+        existingApplicationOpened: false,
+        hideApplicationReference: true,
+        allowStatusCheck: false,
+        message: "This application already exists.",
       });
     }
 
@@ -654,6 +1029,8 @@ function getNextStepMessage(status) {
   const messages = {
     SUBMITTED:
       "Your application has been received and is waiting for eligibility review.",
+    PENDING_REVIEW:
+      "Your application has been received and requires manual eligibility review before a test invitation is sent.",
     INELIGIBLE:
       "Your application was received but did not meet the initial eligibility criteria.",
     ELIGIBLE_PENDING_SKILLS_TEST:
@@ -681,44 +1058,62 @@ function getNextStepMessage(status) {
 
 async function getRegistrationStatus(req, res) {
   try {
-    const reference = String(req.params.reference || "")
-      .trim()
-      .toUpperCase();
+    const identifier = String(req.params.reference || "").trim();
+    const applicationReference = identifier.toUpperCase();
+    const normalizedContactNumber = normalizeContactNumber(identifier);
 
-    if (!reference) {
+    if (!identifier) {
       return res.status(400).json({
         success: false,
-        message: "Application reference is required.",
+        message: "Application reference or mobile number is required.",
       });
     }
 
-    const applicant = await prisma.applicant.findUnique({
+    const include = {
+      statusHistory: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+      skillsTestAttempts: {
+        orderBy: {
+          submittedAt: "desc",
+        },
+      },
+      skillsTestInvitations: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    };
+
+    // Keep the existing application-reference lookup as the first option.
+    let applicant = await prisma.applicant.findUnique({
       where: {
-        applicationReference: reference,
+        applicationReference,
       },
-      include: {
-        statusHistory: {
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
-        skillsTestAttempts: {
-          orderBy: {
-            submittedAt: "desc",
-          },
-        },
-        skillsTestInvitations: {
-          orderBy: {
-            createdAt: "desc",
-          },
-        },
-      },
+      include,
     });
 
-    if (!applicant) {
+    let lookupMethod = "APPLICATION_REFERENCE";
+
+    // If no reference match is found, use the normalized primary mobile number.
+    // The normalized field is unique, so one mobile number can only open one application.
+    if (!applicant && normalizedContactNumber && normalizedContactNumber.length >= 7) {
+      applicant = await prisma.applicant.findUnique({
+        where: {
+          normalizedContactNumber,
+        },
+        include,
+      });
+      lookupMethod = "MOBILE_NUMBER";
+    }
+
+    if (!applicant || applicant.status === "INELIGIBLE") {
       return res.status(404).json({
         success: false,
-        message: "No application was found with that reference number.",
+        message:
+          "No trackable application was found with that application reference or mobile number.",
       });
     }
 
@@ -731,8 +1126,15 @@ async function getRegistrationStatus(req, res) {
         pathway: applicant.pathway,
         registrationMode: applicant.registrationMode,
         isEligible: applicant.isEligible,
+        eligibilityReason: applicant.eligibilityReason,
+        screeningStatus: applicant.screeningStatus,
+        screeningVersion: applicant.screeningVersion,
+        ageAtApplication: applicant.ageAtApplication,
+        eligibilityReasonCodes: applicant.eligibilityReasonCodes,
+        eligibilityDetails: applicant.eligibilityDetails,
         submittedAt: applicant.createdAt,
         lastUpdatedAt: applicant.updatedAt,
+        lookupMethod,
         dhis2Synced: Boolean(applicant.dhis2TrackedEntityId),
         requiresBasicSkillsTest:
           applicant.isEligible && applicant.skillsTestAttempts.length === 0,
@@ -753,6 +1155,7 @@ async function getRegistrationStatus(req, res) {
               maxScore: applicant.skillsTestAttempts[0].maxScore,
               percentage: applicant.skillsTestAttempts[0].percentage,
               passed: applicant.skillsTestAttempts[0].passed,
+              testVersion: applicant.skillsTestAttempts[0].testVersion,
               submittedAt: applicant.skillsTestAttempts[0].submittedAt,
             }
           : { submitted: false },
@@ -775,13 +1178,6 @@ async function getRegistrationStatus(req, res) {
   }
 }
 
-async function getRegistrationFormQuestions(req, res) {
-  return res.json({
-    formName: "Registration Form - phy & virt",
-    formVersion: "1.0",
-    questions: registrationFormQuestions,
-  });
-}
 
 module.exports = {
   submitRegistration,
