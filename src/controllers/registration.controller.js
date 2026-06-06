@@ -182,12 +182,67 @@ async function findDuplicateApplication({ normalizedEmail, normalizedContactNumb
   });
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_3";
+const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_4";
 const REGISTRATION_FORM_VERSION = "1.2";
-// Current requirement: applicants must be 34 years old or below at the date of application.
 const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 34);
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
+
+const PUBLIC_ELIGIBILITY_FEEDBACK = {
+  OVER_AGE: () =>
+    `The programme is currently open to applicants who are ${MAX_ELIGIBLE_AGE} years old or below at the time of application.`,
+  NO_DISABILITY: () =>
+    "This programme pathway is currently designed for applicants who identify as persons with disabilities.",
+  MISSING_AGE_INFORMATION: () =>
+    "We could not confirm your age from the date of birth provided, so the application needs a manual check.",
+  AGE_DATA_OUTLIER: () =>
+    "We could not validate the date of birth provided, so the application needs a manual check.",
+  DISABILITY_STATUS_UNCONFIRMED: () =>
+    "We could not confirm the disability information provided, so the application needs a manual check.",
+  DISABILITY_REGISTRATION_STATUS_MISSING: () =>
+    "The disability registration information needs to be confirmed before the next step.",
+  DISABILITY_REGISTRATION_STATUS_UNCONFIRMED: () =>
+    "The disability registration information needs to be reviewed by the project team before the next step.",
+  UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW: () =>
+    "Because you indicated that you are not formally registered as a person with disability, the project team needs to review the supporting information before the next step.",
+  DISABILITY_STATUS_CONFLICT: () =>
+    "The disability answers provided appear to conflict, so the project team needs to review the application before the next step.",
+};
+
+function buildPublicEligibilityFeedback(reasonCodes = []) {
+  const feedback = [];
+
+  for (const code of reasonCodes || []) {
+    const messageFactory = PUBLIC_ELIGIBILITY_FEEDBACK[code];
+    const message = typeof messageFactory === "function" ? messageFactory() : null;
+
+    if (message && !feedback.includes(message)) {
+      feedback.push(message);
+    }
+  }
+
+  return feedback;
+}
+
+function buildApplicantEligibilityMessage(screeningStatus, feedbackMessages = []) {
+  if (screeningStatus === "NOT_ELIGIBLE") {
+    if (feedbackMessages.length === 0) {
+      return "Unfortunately, you are not eligible for this programme at this time because the application did not meet the current programme requirements.";
+    }
+
+    return `Unfortunately, you are not eligible for this programme at this time. Reason: ${feedbackMessages.join(" ")}`;
+  }
+
+  if (screeningStatus === "PENDING_REVIEW") {
+    if (feedbackMessages.length === 0) {
+      return "Your application has been received and needs a manual eligibility review before the next step.";
+    }
+
+    return `Your application has been received and needs a manual eligibility review. Reason: ${feedbackMessages.join(" ")}`;
+  }
+
+  return "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address.";
+}
 
 function parseDate(value) {
   if (!value) return null;
@@ -303,7 +358,6 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     source: ageEvidence.source,
     ageAtApplication: ageEvidence.ageAtApplication,
     maxEligibleAge: MAX_ELIGIBLE_AGE,
-    rule: "34_YEARS_AND_BELOW",
     passed:
       ageEvidence.ageAtApplication !== null &&
       ageEvidence.ageAtApplication <= MAX_ELIGIBLE_AGE,
@@ -381,6 +435,8 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
   }
 
   const isEligible = screeningStatus === "ELIGIBLE";
+  const publicFeedback = buildPublicEligibilityFeedback(reasonCodes);
+  const applicantMessage = buildApplicantEligibilityMessage(screeningStatus, publicFeedback);
 
   const reasonMessages = {
     ELIGIBLE:
@@ -401,6 +457,8 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     yearOfBirth: ageEvidence.yearOfBirth,
     reasonCodes,
     criterionResults,
+    publicFeedback,
+    applicantMessage,
     reason: reasonMessages[screeningStatus],
   };
 }
@@ -827,12 +885,19 @@ async function submitRegistration(req, res) {
     const publicParticipantCode = canTrackApplication
       ? applicant.participantCode
       : null;
+    const eligibilityFeedbackMessages = buildPublicEligibilityFeedback(
+      applicant.eligibilityReasonCodes || []
+    );
+    const applicantEligibilityMessage = buildApplicantEligibilityMessage(
+      applicant.screeningStatus,
+      eligibilityFeedbackMessages
+    );
     const publicEligibilityReason = canTrackApplication
       ? applicant.eligibilityReason
-      : null;
+      : applicantEligibilityMessage;
     const publicMessage = canTrackApplication
       ? "Registration submitted successfully."
-      : "Unfortunately, you are not eligible for this programme at this time.";
+      : applicantEligibilityMessage;
 
     return res.status(201).json({
       success: true,
@@ -847,6 +912,7 @@ async function submitRegistration(req, res) {
       isEligible: applicant.isEligible,
       status: applicant.status,
       eligibilityReason: publicEligibilityReason,
+      eligibilityFeedback: eligibilityFeedbackMessages,
       screeningStatus: applicant.screeningStatus,
       screeningVersion: applicant.screeningVersion,
       ageAtApplication: applicant.ageAtApplication,
@@ -863,7 +929,7 @@ async function submitRegistration(req, res) {
           ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
           : applicant.status === "PENDING_REVIEW"
             ? "Your application requires a manual review before the next step."
-            : "Unfortunately, you are not eligible for this programme at this time.",
+            : applicantEligibilityMessage,
 
       // New tracking fields.
       personUid: canTrackApplication ? applicant.id : null,
@@ -883,6 +949,7 @@ async function submitRegistration(req, res) {
         isEligible: applicant.isEligible,
         status: applicant.status,
         eligibilityReason: publicEligibilityReason,
+        eligibilityFeedback: eligibilityFeedbackMessages,
         screeningStatus: applicant.screeningStatus,
         screeningVersion: applicant.screeningVersion,
         ageAtApplication: applicant.ageAtApplication,
@@ -899,7 +966,7 @@ async function submitRegistration(req, res) {
             ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
             : applicant.status === "PENDING_REVIEW"
               ? "Your application requires a manual review before the next step."
-              : "Unfortunately, you are not eligible for this programme at this time.",
+              : applicantEligibilityMessage,
         submittedAt: applicant.createdAt,
       },
     });
