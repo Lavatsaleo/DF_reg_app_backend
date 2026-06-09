@@ -5,6 +5,7 @@ const morgan = require("morgan");
 const healthRoutes = require("./routes/health.routes");
 const registrationRoutes = require("./routes/registration.routes");
 const basicSkillsTestRoutes = require("./routes/basicSkillsTest.routes");
+const committeeRoutes = require("./routes/committee.routes");
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 app.use("/api/health", healthRoutes);
 app.use("/api/registrations", registrationRoutes);
 app.use("/api/basic-skills-test", basicSkillsTestRoutes);
+app.use("/api/committee", committeeRoutes);
 
 app.use((req, res) => {
   res.status(404).json({

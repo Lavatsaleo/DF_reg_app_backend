@@ -236,6 +236,9 @@ model Applicant {
   statusHistory      ApplicantStatusHistory[]
   skillsTestAttempts    BasicSkillsTestAttempt[]
   skillsTestInvitations BasicSkillsTestInvitation[]
+  committeeAssignments  CommitteeAssignment[]
+  committeeReviews      CommitteeReview[]
+  committeeAssignmentHistory CommitteeAssignmentHistory[]
 
   @@index([status])
   @@index([country])
@@ -460,4 +463,113 @@ model BasicSkillsTestAnswer {
   @@index([attemptId])
   @@index([questionCode])
   @@index([isCorrect])
+}
+
+
+model CommitteeMember {
+  id String @id @default(uuid())
+
+  fullName String
+  email    String @unique
+  phone    String?
+  role     String @default("MEMBER")
+  isActive Boolean @default(true)
+  notes    String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments      CommitteeAssignment[] @relation("AssignedCommitteeMember")
+  assignmentsMade  CommitteeAssignment[] @relation("AssignmentCreatedBy")
+  reviews          CommitteeReview[]
+  assignmentChangesMade CommitteeAssignmentHistory[] @relation("AssignmentChangedBy")
+  assignmentHistoryFrom CommitteeAssignmentHistory[] @relation("AssignmentFromMember")
+  assignmentHistoryTo   CommitteeAssignmentHistory[] @relation("AssignmentToMember")
+
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+}
+
+model CommitteeAssignment {
+  id String @id @default(uuid())
+
+  applicantId       String @unique
+  committeeMemberId String
+
+  assignedByType     String @default("SYSTEM")
+  assignedByMemberId String?
+  status             String @default("ASSIGNED")
+
+  assignedAt  DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  applicant       Applicant       @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  committeeMember CommitteeMember @relation("AssignedCommitteeMember", fields: [committeeMemberId], references: [id], onDelete: Restrict)
+  assignedByMember CommitteeMember? @relation("AssignmentCreatedBy", fields: [assignedByMemberId], references: [id], onDelete: SetNull)
+  review          CommitteeReview?
+  history         CommitteeAssignmentHistory[]
+
+  @@index([committeeMemberId])
+  @@index([assignedByMemberId])
+  @@index([status])
+  @@index([assignedAt])
+}
+
+model CommitteeReview {
+  id String @id @default(uuid())
+
+  assignmentId      String @unique
+  applicantId       String
+  committeeMemberId String
+
+  decision String
+  comments String? @db.Text
+  reviewedAt DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignment      CommitteeAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  applicant       Applicant           @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  committeeMember CommitteeMember     @relation(fields: [committeeMemberId], references: [id], onDelete: Restrict)
+
+  @@index([applicantId])
+  @@index([committeeMemberId])
+  @@index([decision])
+  @@index([reviewedAt])
+}
+
+model CommitteeAssignmentHistory {
+  id String @id @default(uuid())
+
+  assignmentId String?
+  applicantId  String
+
+  fromCommitteeMemberId String?
+  toCommitteeMemberId   String
+  changedByMemberId     String?
+
+  changeType String @default("ASSIGNED")
+  reason     String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  assignment CommitteeAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  applicant  Applicant            @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  fromCommitteeMember CommitteeMember? @relation("AssignmentFromMember", fields: [fromCommitteeMemberId], references: [id], onDelete: SetNull)
+  toCommitteeMember   CommitteeMember  @relation("AssignmentToMember", fields: [toCommitteeMemberId], references: [id], onDelete: Restrict)
+  changedByMember     CommitteeMember? @relation("AssignmentChangedBy", fields: [changedByMemberId], references: [id], onDelete: SetNull)
+
+  @@index([assignmentId])
+  @@index([applicantId])
+  @@index([fromCommitteeMemberId])
+  @@index([toCommitteeMemberId])
+  @@index([changedByMemberId])
+  @@index([changeType])
+  @@index([createdAt])
 }

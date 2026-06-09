@@ -9,6 +9,9 @@ const { hashToken } = require("../utils/tokenUtils");
 const {
   createAndSendBasicSkillsTestInvitation,
 } = require("../services/basicSkillsTestInvitation.service");
+const {
+  assignApplicantToLeastLoadedMember,
+} = require("../services/committeeAssignment.service");
 
 const REVIEW_TERMINAL_STATUSES = [
   "APPROVED_FOR_ENROLLMENT",
@@ -416,7 +419,7 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
     ? applicant.status
     : "SKILLS_TEST_COMPLETED_PENDING_REVIEW";
 
-  const createdAttempt = await prisma.$transaction(async (tx) => {
+  const transactionResult = await prisma.$transaction(async (tx) => {
     const attempt = await tx.basicSkillsTestAttempt.create({
       data: {
         applicantId: applicant.id,
@@ -469,12 +472,22 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
       });
     }
 
-    return attempt;
+    const assignment = nextStatus === "SKILLS_TEST_COMPLETED_PENDING_REVIEW"
+      ? await assignApplicantToLeastLoadedMember({
+          applicantId: applicant.id,
+          tx,
+          assignedByType: "SYSTEM",
+          reason: "Automatically assigned after Basic IT skills test completion.",
+        })
+      : null;
+
+    return { attempt, assignment };
   });
 
   return {
     duplicate: false,
-    attempt: createdAttempt,
+    attempt: transactionResult.attempt,
+    assignment: transactionResult.assignment,
     nextStatus,
   };
 }
@@ -538,6 +551,19 @@ async function submitBasicSkillsTest(req, res) {
         ...buildApplicantSummary(applicant),
         status: result.nextStatus,
       },
+      committeeAssignment: result.assignment
+        ? {
+            id: result.assignment.id,
+            status: result.assignment.status,
+            committeeMember: result.assignment.committeeMember
+              ? {
+                  id: result.assignment.committeeMember.id,
+                  fullName: result.assignment.committeeMember.fullName,
+                  email: result.assignment.committeeMember.email,
+                }
+              : null,
+          }
+        : null,
       attempt: summarizeAttempt(result.attempt),
     });
   } catch (error) {
