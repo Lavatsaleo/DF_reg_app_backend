@@ -8,6 +8,7 @@ const {
   normalizeAssignmentStatus,
 } = require("../services/committeeAssignment.service");
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
+const { hashPassword } = require("../utils/passwordUtils");
 
 const REVIEW_DECISION_LABELS = {
   SELECTED: "Selected",
@@ -25,6 +26,33 @@ const DECISION_TO_APPLICANT_STATUS = {
 
 function toSafeString(value) {
   return String(value || "").trim();
+}
+
+function isCommitteeMemberUser(req) {
+  return req.user?.role === "COMMITTEE_MEMBER";
+}
+
+function getUserCommitteeMemberId(req) {
+  return req.user?.committeeMemberId || null;
+}
+
+function canUserAccessAssignment(req, assignment) {
+  if (!isCommitteeMemberUser(req)) return true;
+  return assignment?.committeeMemberId && assignment.committeeMemberId === getUserCommitteeMemberId(req);
+}
+
+function requireLinkedCommitteeMember(req, res) {
+  if (!isCommitteeMemberUser(req)) return true;
+
+  if (!getUserCommitteeMemberId(req)) {
+    res.status(403).json({
+      success: false,
+      message: "Your staff account is not linked to a committee member profile. Please contact the administrator.",
+    });
+    return false;
+  }
+
+  return true;
 }
 
 function normalizeDecision(value) {
@@ -237,21 +265,60 @@ async function createCommitteeMember(req, res) {
       });
     }
 
-    const member = await prisma.committeeMember.create({
-      data: {
-        fullName,
-        email,
-        phone: phone || null,
-        role,
-        isActive: req.body.isActive === undefined ? true : Boolean(req.body.isActive),
-        notes,
-      },
+    const createLogin = Boolean(req.body.createLogin);
+    const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
+
+    if (createLogin && temporaryPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Temporary password must be at least 8 characters when creating a staff login.",
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const member = await tx.committeeMember.create({
+        data: {
+          fullName,
+          email,
+          phone: phone || null,
+          role,
+          isActive: req.body.isActive === undefined ? true : Boolean(req.body.isActive),
+          notes,
+        },
+      });
+
+      let staffUser = null;
+      if (createLogin) {
+        staffUser = await tx.staffUser.create({
+          data: {
+            fullName,
+            email,
+            passwordHash: hashPassword(temporaryPassword),
+            role: role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER",
+            committeeMemberId: member.id,
+            isActive: true,
+          },
+        });
+      }
+
+      return { member, staffUser };
     });
 
     return res.status(201).json({
       success: true,
-      message: "Committee member added successfully.",
-      member: summarizeMember(member),
+      message: result.staffUser
+        ? "Committee member and staff login added successfully."
+        : "Committee member added successfully.",
+      member: summarizeMember(result.member),
+      staffUser: result.staffUser
+        ? {
+            id: result.staffUser.id,
+            fullName: result.staffUser.fullName,
+            email: result.staffUser.email,
+            role: result.staffUser.role,
+            isActive: result.staffUser.isActive,
+          }
+        : null,
     });
   } catch (error) {
     console.error("Create committee member error:", error);
@@ -383,7 +450,13 @@ async function listCommitteeAssignments(req, res) {
 
     const where = {};
     if (status) where.status = status;
-    if (memberId) where.committeeMemberId = memberId;
+
+    if (isCommitteeMemberUser(req)) {
+      if (!requireLinkedCommitteeMember(req, res)) return null;
+      where.committeeMemberId = getUserCommitteeMemberId(req);
+    } else if (memberId) {
+      where.committeeMemberId = memberId;
+    }
 
     const assignments = await prisma.committeeAssignment.findMany({
       where,
@@ -519,7 +592,7 @@ async function reassignApplicant(req, res) {
   try {
     const assignmentId = req.params.assignmentId;
     const toCommitteeMemberId = toSafeString(req.body.toCommitteeMemberId);
-    const changedByMemberId = toSafeString(req.body.changedByMemberId) || null;
+    const changedByMemberId = getUserCommitteeMemberId(req) || toSafeString(req.body.changedByMemberId) || null;
     const reason = toSafeString(req.body.reason) || "Reassigned by committee chairperson.";
 
     if (!toCommitteeMemberId) {
@@ -606,6 +679,27 @@ async function reassignApplicant(req, res) {
 async function startReview(req, res) {
   try {
     const assignmentId = req.params.assignmentId;
+
+    if (!requireLinkedCommitteeMember(req, res)) return null;
+
+    const existingAssignment = await prisma.committeeAssignment.findUnique({
+      where: { id: assignmentId },
+    });
+
+    if (!existingAssignment) {
+      return res.status(404).json({
+        success: false,
+        message: "Committee assignment not found.",
+      });
+    }
+
+    if (!canUserAccessAssignment(req, existingAssignment)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only review applicants assigned to you.",
+      });
+    }
+
     const assignment = await prisma.committeeAssignment.update({
       where: { id: assignmentId },
       data: {
@@ -622,13 +716,6 @@ async function startReview(req, res) {
     });
   } catch (error) {
     console.error("Start review error:", error);
-
-    if (error.code === "P2025") {
-      return res.status(404).json({
-        success: false,
-        message: "Committee assignment not found.",
-      });
-    }
 
     return res.status(500).json({
       success: false,
@@ -663,6 +750,12 @@ async function submitCommitteeReview(req, res) {
       if (!assignment) {
         const err = new Error("Committee assignment not found.");
         err.statusCode = 404;
+        throw err;
+      }
+
+      if (!canUserAccessAssignment(req, assignment)) {
+        const err = new Error("You can only submit decisions for applicants assigned to you.");
+        err.statusCode = 403;
         throw err;
       }
 

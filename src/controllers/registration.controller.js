@@ -6,6 +6,7 @@ const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = requi
 const {
   generateParticipantCode,
   generateApplicationReference,
+  generateDraftReference,
 } = require("../utils/registrationIds");
 
 const ALLOWED_REGISTRATION_MODES = ["PHYSICAL", "VIRTUAL", "BOTH", "UNKNOWN"];
@@ -182,7 +183,128 @@ async function findDuplicateApplication({ normalizedEmail, normalizedContactNumb
   });
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_4";
+function sanitizeDraftAnswers(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce((accumulator, [key, answer]) => {
+    if (answer === undefined) return accumulator;
+
+    if (answer === null || ["string", "number", "boolean"].includes(typeof answer)) {
+      accumulator[key] = answer;
+      return accumulator;
+    }
+
+    if (Array.isArray(answer)) {
+      accumulator[key] = answer.filter((item) => item !== undefined);
+      return accumulator;
+    }
+
+    accumulator[key] = String(answer);
+    return accumulator;
+  }, {});
+}
+
+function buildResponsesFromAnswerObject(answers = {}) {
+  return Object.entries(answers).map(([questionCode, answer]) => ({
+    questionCode,
+    answer,
+  }));
+}
+
+function calculateDraftCompletionPercent(answers = {}) {
+  const draftResponses = buildResponsesFromAnswerObject(answers);
+  const visibleQuestions = registrationFormQuestions.filter((question) =>
+    isQuestionVisible(question, draftResponses)
+  );
+  const requiredQuestions = visibleQuestions.filter((question) => question.required);
+
+  if (requiredQuestions.length === 0) return 0;
+
+  const completedRequired = requiredQuestions.filter((question) => {
+    const answer = answers[question.questionCode];
+    return !(
+      answer === undefined ||
+      answer === null ||
+      answer === "" ||
+      (Array.isArray(answer) && answer.length === 0)
+    );
+  });
+
+  return Math.round((completedRequired.length / requiredQuestions.length) * 100);
+}
+
+function buildDraftPublicPayload(draft, { includeAnswers = false } = {}) {
+  if (!draft) return null;
+
+  return {
+    draftReference: draft.draftReference,
+    applicationReference: null,
+    participantCode: null,
+    status: draft.status || "INCOMPLETE",
+    pathway: draft.pathway,
+    registrationMode: draft.pathway === "PHYSICAL_ACADEMY" ? "PHYSICAL" : "UNKNOWN",
+    contactNumber: draft.contactNumber,
+    email: draft.email,
+    documentType: draft.documentType || "DISABILITY_DOCUMENT",
+    currentStep: draft.currentStep || 0,
+    completionPercent: draft.completionPercent || 0,
+    lastSavedAt: draft.lastSavedAt,
+    savedAt: draft.lastSavedAt,
+    submittedAt: null,
+    allowResume: draft.status === "INCOMPLETE",
+    isIncompleteDraft: draft.status === "INCOMPLETE",
+    nextStepMessage:
+      draft.status === "INCOMPLETE"
+        ? "Your application is incomplete. You can continue from where you stopped."
+        : "This saved draft has already been submitted.",
+    ...(includeAnswers ? { answers: draft.answers || {} } : {}),
+  };
+}
+
+function datesMatch(leftValue, rightValue) {
+  if (!leftValue || !rightValue) return false;
+
+  const leftDate = new Date(leftValue);
+  const rightDate = new Date(rightValue);
+
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
+    return String(leftValue).slice(0, 10) === String(rightValue).slice(0, 10);
+  }
+
+  return leftDate.toISOString().slice(0, 10) === rightDate.toISOString().slice(0, 10);
+}
+
+async function findIncompleteDraftByIdentifier(identifier) {
+  const cleanIdentifier = String(identifier || "").trim();
+  const draftReference = cleanIdentifier.toUpperCase();
+  const normalizedContactNumber = normalizeContactNumber(cleanIdentifier);
+
+  if (!cleanIdentifier) return null;
+
+  if (draftReference.startsWith("DRAFT-")) {
+    const draft = await prisma.registrationDraft.findUnique({
+      where: { draftReference },
+    });
+
+    return draft?.status === "INCOMPLETE" ? draft : null;
+  }
+
+  if (normalizedContactNumber && normalizedContactNumber.length >= 7) {
+    return prisma.registrationDraft.findFirst({
+      where: {
+        normalizedContactNumber,
+        status: "INCOMPLETE",
+      },
+      orderBy: { lastSavedAt: "desc" },
+    });
+  }
+
+  return null;
+}
+
+const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_5";
 const REGISTRATION_FORM_VERSION = "1.2";
 const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 34);
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
@@ -200,11 +322,11 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
   DISABILITY_STATUS_UNCONFIRMED: () =>
     "We could not confirm the disability information provided, so the application needs a manual check.",
   DISABILITY_REGISTRATION_STATUS_MISSING: () =>
-    "The disability registration information needs to be confirmed before the next step.",
+    "The disability registration information will be checked later by the review committee.",
   DISABILITY_REGISTRATION_STATUS_UNCONFIRMED: () =>
-    "The disability registration information needs to be reviewed by the project team before the next step.",
+    "The disability registration information will be reviewed later by the project team.",
   UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW: () =>
-    "Because you indicated that you are not formally registered as a person with disability, the project team needs to review the supporting information before the next step.",
+    "Because you indicated that you are not formally registered as a person with disability, the supporting information will be reviewed later by the committee.",
   DISABILITY_STATUS_CONFLICT: () =>
     "The disability answers provided appear to conflict, so the project team needs to review the application before the next step.",
 };
@@ -235,10 +357,10 @@ function buildApplicantEligibilityMessage(screeningStatus, feedbackMessages = []
 
   if (screeningStatus === "PENDING_REVIEW") {
     if (feedbackMessages.length === 0) {
-      return "Your application has been received and needs a manual eligibility review before the next step.";
+      return "Your application has been received and needs an internal data review because the initial eligibility check could not be completed automatically.";
     }
 
-    return `Your application has been received and needs a manual eligibility review. Reason: ${feedbackMessages.join(" ")}`;
+    return `Your application has been received and needs an internal data review because the initial eligibility check could not be completed automatically. Reason: ${feedbackMessages.join(" ")}`;
   }
 
   return "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address.";
@@ -415,14 +537,14 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     reasonCodes.push("DISABILITY_STATUS_CONFLICT");
   }
 
+  // Initial eligibility only decides whether the applicant can proceed to the
+  // Basic IT Skills Test. Document and disability registration evidence is
+  // reviewed later by the committee together with the test result.
   const blockingReasonCodes = ["OVER_AGE", "NO_DISABILITY"];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
     "DISABILITY_STATUS_UNCONFIRMED",
-    "DISABILITY_REGISTRATION_STATUS_MISSING",
-    "DISABILITY_REGISTRATION_STATUS_UNCONFIRMED",
-    "UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW",
     "DISABILITY_STATUS_CONFLICT",
   ];
 
@@ -444,7 +566,7 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     NOT_ELIGIBLE:
       "Applicant did not meet the initial eligibility criteria. The application has still been saved for programme records and reporting.",
     PENDING_REVIEW:
-      "Applicant requires manual eligibility review before a Basic IT skills test invitation is sent.",
+      "Applicant requires internal data review because the initial eligibility check could not be completed automatically.",
   };
 
   return {
@@ -539,6 +661,207 @@ async function getRegistrationFormQuestions(req, res) {
   });
 }
 
+async function saveRegistrationDraft(req, res) {
+  try {
+    const answers = sanitizeDraftAnswers(req.body.answers || {});
+    const draftReference = String(req.body.draftReference || "").trim().toUpperCase();
+    const pathway = normalizePathway(req.body.pathway);
+    const documentType = req.body.documentType || "DISABILITY_DOCUMENT";
+    const currentStep = Number.isFinite(Number(req.body.currentStep))
+      ? Math.max(0, Number(req.body.currentStep))
+      : 0;
+
+    const contactNumber = answers.CONTACT_NUMBER || req.body.contactNumber || null;
+    const email = answers.EMAIL || req.body.email || null;
+    const normalizedContactNumber = normalizeContactNumber(contactNumber);
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!draftReference && !normalizedContactNumber) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Enter a mobile number before saving to the portal. The form is still saved on this device until then.",
+      });
+    }
+
+    if (normalizedContactNumber) {
+      const existingApplicant = await prisma.applicant.findUnique({
+        where: { normalizedContactNumber },
+        select: { applicationReference: true, status: true },
+      });
+
+      if (existingApplicant) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "A submitted application already exists for this mobile number. Use Check Status instead of creating a new draft.",
+          applicationReference:
+            existingApplicant.status === "INELIGIBLE"
+              ? null
+              : existingApplicant.applicationReference,
+        });
+      }
+    }
+
+    const completionPercent = calculateDraftCompletionPercent(answers);
+    const now = new Date();
+
+    const draft = await prisma.$transaction(async (tx) => {
+      let existingDraft = null;
+
+      if (draftReference) {
+        existingDraft = await tx.registrationDraft.findUnique({
+          where: { draftReference },
+        });
+      }
+
+      if (!existingDraft && normalizedContactNumber) {
+        existingDraft = await tx.registrationDraft.findFirst({
+          where: {
+            normalizedContactNumber,
+            status: "INCOMPLETE",
+          },
+          orderBy: { lastSavedAt: "desc" },
+        });
+      }
+
+      if (existingDraft) {
+        if (existingDraft.status !== "INCOMPLETE") {
+          throw Object.assign(new Error("This draft has already been submitted."), {
+            statusCode: 409,
+          });
+        }
+
+        return tx.registrationDraft.update({
+          where: { id: existingDraft.id },
+          data: {
+            pathway,
+            contactNumber,
+            normalizedContactNumber,
+            email,
+            normalizedEmail,
+            answers,
+            documentType,
+            currentStep,
+            completionPercent,
+            lastSavedAt: now,
+          },
+        });
+      }
+
+      const newDraftReference = await generateDraftReference(tx);
+
+      return tx.registrationDraft.create({
+        data: {
+          draftReference: newDraftReference,
+          pathway,
+          contactNumber,
+          normalizedContactNumber,
+          email,
+          normalizedEmail,
+          answers,
+          documentType,
+          currentStep,
+          completionPercent,
+          status: "INCOMPLETE",
+          lastSavedAt: now,
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: "Application draft saved.",
+      data: buildDraftPublicPayload(draft, { includeAnswers: false }),
+    });
+  } catch (error) {
+    console.error("Save registration draft error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || "Failed to save application draft.",
+    });
+  }
+}
+
+async function getRegistrationDraft(req, res) {
+  try {
+    const draftReference = String(req.params.draftReference || "").trim().toUpperCase();
+
+    const draft = await prisma.registrationDraft.findUnique({
+      where: { draftReference },
+    });
+
+    if (!draft || draft.status !== "INCOMPLETE") {
+      return res.status(404).json({
+        success: false,
+        message: "No incomplete application draft was found.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: buildDraftPublicPayload(draft, { includeAnswers: false }),
+    });
+  } catch (error) {
+    console.error("Get registration draft error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch application draft.",
+      error: error.message,
+    });
+  }
+}
+
+async function resumeRegistrationDraft(req, res) {
+  try {
+    const identifier =
+      req.body.draftReference || req.body.contactNumber || req.body.identifier || "";
+    const draft = await findIncompleteDraftByIdentifier(identifier);
+
+    if (!draft) {
+      return res.status(404).json({
+        success: false,
+        message: "No incomplete application draft was found for those details.",
+      });
+    }
+
+    const answers = draft.answers || {};
+    const providedDateOfBirth = req.body.dateOfBirth;
+    const providedEmail = normalizeEmail(req.body.email);
+    const savedDateOfBirth = answers.DATE_OF_BIRTH;
+    const savedEmail = normalizeEmail(answers.EMAIL || draft.email);
+
+    const verifiedByDateOfBirth =
+      savedDateOfBirth && providedDateOfBirth && datesMatch(savedDateOfBirth, providedDateOfBirth);
+    const verifiedByEmail = savedEmail && providedEmail && savedEmail === providedEmail;
+    const canResumeWithoutExtraVerification = !savedDateOfBirth && !savedEmail;
+
+    if (!verifiedByDateOfBirth && !verifiedByEmail && !canResumeWithoutExtraVerification) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "We found an incomplete application, but the verification details did not match. Use the date of birth or email address entered in the form.",
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Incomplete application draft found.",
+      data: buildDraftPublicPayload(draft, { includeAnswers: true }),
+    });
+  } catch (error) {
+    console.error("Resume registration draft error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to resume application draft.",
+      error: error.message,
+    });
+  }
+}
+
 async function submitRegistration(req, res) {
   try {
     const { responses } = req.body;
@@ -549,6 +872,8 @@ async function submitRegistration(req, res) {
       parsedResponses =
         typeof responses === "string" ? JSON.parse(responses) : responses;
     }
+
+    const submittedDraftReference = String(req.body.draftReference || "").trim().toUpperCase();
 
     if (!Array.isArray(parsedResponses) || parsedResponses.length === 0) {
       return res.status(400).json({
@@ -830,6 +1155,30 @@ async function submitRegistration(req, res) {
         });
       }
 
+      const draftMatchConditions = [];
+
+      if (submittedDraftReference) {
+        draftMatchConditions.push({ draftReference: submittedDraftReference });
+      }
+
+      if (normalizedContactNumber) {
+        draftMatchConditions.push({ normalizedContactNumber });
+      }
+
+      if (draftMatchConditions.length > 0) {
+        await tx.registrationDraft.updateMany({
+          where: {
+            status: "INCOMPLETE",
+            OR: draftMatchConditions,
+          },
+          data: {
+            status: "SUBMITTED",
+            submittedApplicantId: createdApplicant.id,
+            lastSavedAt: new Date(),
+          },
+        });
+      }
+
       return {
         applicant: createdApplicant,
         testInvitationData,
@@ -926,9 +1275,11 @@ async function submitRegistration(req, res) {
       testInvitationEmailStatus: testInvitationEmailResult?.status || null,
       nextStepMessage:
         applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
-          ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+          ? testInvitationEmailResult?.sent
+            ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+            : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so use the local testing link while SMTP is being configured."
           : applicant.status === "PENDING_REVIEW"
-            ? "Your application requires a manual review before the next step."
+            ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
             : applicantEligibilityMessage,
 
       // New tracking fields.
@@ -963,9 +1314,11 @@ async function submitRegistration(req, res) {
         testInvitationEmailStatus: testInvitationEmailResult?.status || null,
         nextStepMessage:
           applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
-            ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+            ? testInvitationEmailResult?.sent
+              ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
+              : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so use the local testing link while SMTP is being configured."
             : applicant.status === "PENDING_REVIEW"
-              ? "Your application requires a manual review before the next step."
+              ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
               : applicantEligibilityMessage,
         submittedAt: applicant.createdAt,
       },
@@ -1097,7 +1450,7 @@ function getNextStepMessage(status) {
     SUBMITTED:
       "Your application has been received and is waiting for eligibility review.",
     PENDING_REVIEW:
-      "Your application has been received and requires manual eligibility review before a test invitation is sent.",
+      "Your application has been received and needs internal data review because the initial eligibility check could not be completed automatically.",
     INELIGIBLE:
       "Your application was received but did not meet the initial eligibility criteria.",
     ELIGIBLE_PENDING_SKILLS_TEST:
@@ -1176,6 +1529,37 @@ async function getRegistrationStatus(req, res) {
       lookupMethod = "MOBILE_NUMBER";
     }
 
+    if (!applicant) {
+      const draft = await findIncompleteDraftByIdentifier(identifier);
+
+      if (draft) {
+        return res.json({
+          success: true,
+          data: {
+            ...buildDraftPublicPayload(draft, { includeAnswers: false }),
+            lookupMethod: draft.draftReference === applicationReference
+              ? "DRAFT_REFERENCE"
+              : "MOBILE_NUMBER",
+            dhis2Synced: false,
+            requiresBasicSkillsTest: false,
+            skillsTest: { submitted: false },
+            timeline: [
+              {
+                status: "INCOMPLETE",
+                note: "Application draft saved but not yet submitted.",
+                date: draft.createdAt,
+              },
+              {
+                status: "INCOMPLETE",
+                note: "Latest draft save.",
+                date: draft.lastSavedAt,
+              },
+            ],
+          },
+        });
+      }
+    }
+
     if (!applicant || applicant.status === "INELIGIBLE") {
       return res.status(404).json({
         success: false,
@@ -1252,4 +1636,7 @@ module.exports = {
   getApplicantById,
   getRegistrationStatus,
   getRegistrationFormQuestions,
+  saveRegistrationDraft,
+  getRegistrationDraft,
+  resumeRegistrationDraft,
 };

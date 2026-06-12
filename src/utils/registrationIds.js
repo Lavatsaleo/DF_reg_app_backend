@@ -40,6 +40,23 @@ async function generateParticipantCode(tx) {
   return `${ORGANISATION_PREFIX}-${PROJECT_PREFIX}-${year}-${paddedNumber}`;
 }
 
+async function generateDraftReference(tx) {
+  const year = getCurrentYear();
+
+  for (let attempt = 1; attempt <= 10; attempt += 1) {
+    const reference = `DRAFT-${PROJECT_PREFIX}-${year}-${randomReadableCode(6)}`;
+
+    const existing = await tx.registrationDraft.findUnique({
+      where: { draftReference: reference },
+      select: { id: true },
+    });
+
+    if (!existing) return reference;
+  }
+
+  throw new Error("Unable to generate a unique draft reference.");
+}
+
 async function generateApplicationReference(tx) {
   const year = getCurrentYear();
 
@@ -60,4 +77,5 @@ async function generateApplicationReference(tx) {
 module.exports = {
   generateParticipantCode,
   generateApplicationReference,
+  generateDraftReference,
 };

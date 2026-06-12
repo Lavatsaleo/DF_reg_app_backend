@@ -93,6 +93,13 @@ enum BasicSkillsTestInvitationStatus {
   CANCELLED
 }
 
+enum StaffRole {
+  ADMIN
+  COMMITTEE_CHAIRPERSON
+  COMMITTEE_MEMBER
+  VIEWER
+}
+
 model Applicant {
   id String @id @default(uuid())
 
@@ -485,6 +492,7 @@ model CommitteeMember {
   assignmentChangesMade CommitteeAssignmentHistory[] @relation("AssignmentChangedBy")
   assignmentHistoryFrom CommitteeAssignmentHistory[] @relation("AssignmentFromMember")
   assignmentHistoryTo   CommitteeAssignmentHistory[] @relation("AssignmentToMember")
+  staffUsers StaffUser[]
 
   @@index([role])
   @@index([isActive])
@@ -572,4 +580,81 @@ model CommitteeAssignmentHistory {
   @@index([changedByMemberId])
   @@index([changeType])
   @@index([createdAt])
+}
+
+model StaffUser {
+  id String @id @default(uuid())
+
+  fullName String
+  email String @unique
+  passwordHash String?
+  role StaffRole @default(COMMITTEE_MEMBER)
+  isActive Boolean @default(true)
+
+  authProvider String @default("LOCAL")
+  externalSubject String? @unique
+  lastPasswordResetAt DateTime?
+
+  committeeMemberId String?
+  lastLoginAt DateTime?
+  tokenVersion Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  committeeMember CommitteeMember? @relation(fields: [committeeMemberId], references: [id], onDelete: SetNull)
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([role])
+  @@index([isActive])
+  @@index([authProvider])
+  @@index([committeeMemberId])
+  @@index([createdAt])
+}
+
+model PasswordResetToken {
+  id String @id @default(uuid())
+
+  staffUserId String
+  tokenHash String @unique
+  expiresAt DateTime
+  usedAt DateTime?
+  requestedIp String?
+
+  createdAt DateTime @default(now())
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@index([expiresAt])
+  @@index([usedAt])
+  @@index([createdAt])
+}
+
+model RegistrationDraft {
+  id String @id @default(uuid())
+
+  draftReference String @unique
+  pathway        Pathway @default(PHYSICAL_ACADEMY)
+
+  contactNumber           String?
+  normalizedContactNumber String? @unique
+  email                   String?
+  normalizedEmail         String?
+
+  answers           Json
+  documentType      String?
+  currentStep       Int    @default(0)
+  completionPercent Int    @default(0)
+
+  status               String  @default("INCOMPLETE")
+  lastSavedAt          DateTime @default(now())
+  submittedApplicantId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([normalizedEmail])
+  @@index([status])
+  @@index([lastSavedAt])
 }
