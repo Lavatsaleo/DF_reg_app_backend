@@ -18,6 +18,22 @@ const ALLOWED_PATHWAYS = [
   "UNKNOWN",
 ];
 
+const PATHWAY_TITLES = {
+  PHYSICAL_ACADEMY: "Physical Academy",
+  VIRTUAL_ACADEMY: "Virtual Academy",
+  DIGITAL_ENTREPRENEURSHIP: "Digital Entrepreneurship",
+};
+
+const COUNTRY_DIAL_CODES = {
+  Kenya: "+254",
+  Nigeria: "+234",
+  Ghana: "+233",
+  Zambia: "+260",
+  Senegal: "+221",
+  Zimbabwe: "+263",
+  Tanzania: "+255",
+};
+
 function toBoolean(value) {
   if (value === true) return true;
   if (value === false) return false;
@@ -25,8 +41,8 @@ function toBoolean(value) {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
 
-    if (["true", "yes", "y", "1"].includes(normalized)) return true;
-    if (["false", "no", "n", "0"].includes(normalized)) return false;
+    if (["true", "yes", "y", "1"].includes(normalized) || normalized.startsWith("yes -")) return true;
+    if (["false", "no", "n", "0"].includes(normalized) || normalized.startsWith("no -")) return false;
   }
 
   return null;
@@ -48,6 +64,65 @@ function normalizePathway(value) {
   const normalized = String(value).trim().toUpperCase();
 
   return ALLOWED_PATHWAYS.includes(normalized) ? normalized : "UNKNOWN";
+}
+
+function getPathwayTitle(value) {
+  const normalizedPathway = normalizePathway(value);
+  return PATHWAY_TITLES[normalizedPathway] || null;
+}
+
+function getCountryDialCode(country) {
+  return COUNTRY_DIAL_CODES[String(country || "").trim()] || "";
+}
+
+function normalizePhoneNumberForCountry(value, country) {
+  const digitsOnly = String(value || "").replace(/\D/g, "");
+  if (!digitsOnly) return digitsOnly;
+
+  const dialCodeDigits = getCountryDialCode(country).replace(/\D/g, "");
+
+  if (!dialCodeDigits || digitsOnly.startsWith(dialCodeDigits)) {
+    return digitsOnly;
+  }
+
+  return `${dialCodeDigits}${digitsOnly.replace(/^0+/, "")}`;
+}
+
+function setAnswerValue(responses, code, nextValue) {
+  const existingResponse = responses.find((item) => item.questionCode === code);
+
+  if (existingResponse) {
+    existingResponse.answer = nextValue;
+    return responses;
+  }
+
+  responses.push({ questionCode: code, answer: nextValue });
+  return responses;
+}
+
+function prepareResponsesForSubmission(responses = [], pathway) {
+  const preparedResponses = responses.map((response) => ({ ...response }));
+  const pathwayTitle = getPathwayTitle(pathway);
+
+  if (pathwayTitle && !getAnswerValue(preparedResponses, "COURSE_APPLIED_FOR")) {
+    setAnswerValue(preparedResponses, "COURSE_APPLIED_FOR", pathwayTitle);
+  }
+
+  const country = getAnswerValue(preparedResponses, "COUNTRY");
+
+  for (const phoneQuestionCode of ["CONTACT_NUMBER", "ALTERNATIVE_CONTACT_NUMBER", "NEXT_OF_KIN_PHONE"]) {
+    const phoneAnswer = getAnswerValue(preparedResponses, phoneQuestionCode);
+
+    if (phoneAnswer !== undefined && phoneAnswer !== null && phoneAnswer !== "") {
+      setAnswerValue(
+        preparedResponses,
+        phoneQuestionCode,
+        normalizePhoneNumberForCountry(phoneAnswer, country)
+      );
+    }
+  }
+
+  return preparedResponses;
 }
 
 function getAnswerValue(responses, code) {
@@ -74,6 +149,20 @@ function isQuestionVisible(question, responses = []) {
     return normalizedAnswer === normalizedExpected;
   }
 
+  if (operator === "in") {
+    const expectedValues = Array.isArray(expectedValue) ? expectedValue : [expectedValue];
+
+    if (Array.isArray(normalizedAnswer)) {
+      return normalizedAnswer.some((item) => expectedValues.includes(normalizeBoolean(item)));
+    }
+
+    return expectedValues.map(normalizeBoolean).includes(normalizedAnswer);
+  }
+
+  if (operator === "notEquals") {
+    return normalizedAnswer !== normalizedExpected;
+  }
+
   if (operator === "contains") {
     if (Array.isArray(controllingAnswer)) {
       return controllingAnswer.includes(expectedValue);
@@ -86,6 +175,18 @@ function isQuestionVisible(question, responses = []) {
     return false;
   }
 
+  if (operator === "notContains") {
+    if (Array.isArray(controllingAnswer)) {
+      return !controllingAnswer.includes(expectedValue);
+    }
+
+    if (typeof controllingAnswer === "string") {
+      return !controllingAnswer.includes(expectedValue);
+    }
+
+    return true;
+  }
+
   return true;
 }
 
@@ -95,6 +196,51 @@ function isValidPersonName(value) {
   // Allow letters from all languages, spaces, apostrophes, hyphens, and periods.
   // At least one letter is required and numbers are never accepted.
   return /^(?=.*\p{L})[\p{L}\p{M}\s'.-]+$/u.test(textValue);
+}
+
+function isWholeNumber(value) {
+  return /^\d+$/.test(String(value || "").trim());
+}
+
+function isValidPhoneDigits(value) {
+  return /^\d{7,15}$/.test(String(value || "").trim());
+}
+
+function isValidYear(value) {
+  const year = Number(value);
+  const currentYear = new Date().getFullYear();
+  return Number.isInteger(year) && year >= 1900 && year <= currentYear;
+}
+
+function isValidYearOrNotSure(value) {
+  if (String(value || "").trim() === "Not sure") return true;
+  return isValidYear(value);
+}
+
+function getAgeFromYear(value, applicationDate = new Date()) {
+  const year = Number(value);
+  if (!Number.isInteger(year)) return null;
+  return applicationDate.getFullYear() - year;
+}
+
+function isEligibleYearOfBirth(value, applicationDate = new Date()) {
+  const age = getAgeFromYear(value, applicationDate);
+  return age !== null && age >= MIN_ELIGIBLE_AGE && age <= MAX_ELIGIBLE_AGE;
+}
+
+function isValidAge(value) {
+  const age = Number(value);
+  return Number.isInteger(age) && age >= 0 && age <= 120;
+}
+
+function isEligibleAge(value) {
+  const age = Number(value);
+  return Number.isInteger(age) && age >= MIN_ELIGIBLE_AGE && age <= MAX_ELIGIBLE_AGE;
+}
+
+function isNonNegativeNumber(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue >= 0;
 }
 
 function validateQuestionFormats(responses = []) {
@@ -117,6 +263,70 @@ function validateQuestionFormats(responses = []) {
         questionCode: question.questionCode,
         questionText: question.questionText,
         message: `${question.questionText} must contain letters only. Numbers are not allowed.`,
+      });
+    }
+
+    if (question.validationType === "WHOLE_NUMBER" && !isWholeNumber(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be a whole number.`,
+      });
+    }
+
+    if (question.validationType === "PHONE_DIGITS" && !isValidPhoneDigits(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must contain numbers only and must be 7 to 15 digits long.`,
+      });
+    }
+
+    if (question.validationType === "YEAR_OR_NOT_SURE" && !isValidYearOrNotSure(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be a valid year or Not sure.`,
+      });
+    }
+
+    if (question.validationType === "ELIGIBLE_YEAR_OF_BIRTH" && !isEligibleYearOfBirth(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be a year of birth for applicants aged ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} at the time of application.`,
+      });
+    }
+
+    if (question.validationType === "YEAR" && !isValidYear(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be a valid year in YYYY format.`,
+      });
+    }
+
+    if (question.validationType === "AGE" && !isValidAge(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be a realistic age.`,
+      });
+    }
+
+    if (question.validationType === "ELIGIBLE_AGE" && !isEligibleAge(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be between ${MIN_ELIGIBLE_AGE} and ${MAX_ELIGIBLE_AGE}.`,
+      });
+    }
+
+    if (question.validationType === "NON_NEGATIVE_NUMBER" && !isNonNegativeNumber(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be zero or a positive number.`,
       });
     }
   }
@@ -304,21 +514,26 @@ async function findIncompleteDraftByIdentifier(identifier) {
   return null;
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "PHYSICAL_ACADEMY_V1_5";
-const REGISTRATION_FORM_VERSION = "1.2";
-const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 34);
+const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FORM_V4_AGE_18_33";
+const REGISTRATION_FORM_VERSION = "3.1";
+const MIN_ELIGIBLE_AGE = Number(process.env.MIN_ELIGIBLE_AGE || 18);
+const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 33);
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
 
 const PUBLIC_ELIGIBILITY_FEEDBACK = {
+  UNDER_AGE: () =>
+    `The programme is currently open to applicants who are between ${MIN_ELIGIBLE_AGE} and ${MAX_ELIGIBLE_AGE} years old at the time of application.`,
   OVER_AGE: () =>
-    `The programme is currently open to applicants who are ${MAX_ELIGIBLE_AGE} years old or below at the time of application.`,
+    `The programme is currently open to applicants who are between ${MIN_ELIGIBLE_AGE} and ${MAX_ELIGIBLE_AGE} years old at the time of application.`,
   NO_DISABILITY: () =>
     "This programme pathway is currently designed for applicants who identify as persons with disabilities.",
   MISSING_AGE_INFORMATION: () =>
-    "We could not confirm your age from the date of birth provided, so the application needs a manual check.",
+    "We could not confirm your age from the information provided, so the application needs a manual check.",
   AGE_DATA_OUTLIER: () =>
-    "We could not validate the date of birth provided, so the application needs a manual check.",
+    "We could not validate the age information provided, so the application needs a manual check.",
+  AGE_NEEDS_MANUAL_REVIEW: () =>
+    "Your year of birth places you near the programme age cut-off, so the project team will review this manually.",
   DISABILITY_STATUS_UNCONFIRMED: () =>
     "We could not confirm the disability information provided, so the application needs a manual check.",
   DISABILITY_REGISTRATION_STATUS_MISSING: () =>
@@ -396,15 +611,57 @@ function getAgeEvidence(responses = [], applicationDate = new Date()) {
       source: "DATE_OF_BIRTH",
       dateOfBirth,
       yearOfBirth: dateOfBirth.getFullYear(),
+      approximateAge: null,
       ageAtApplication: calculateAgeFromDateOfBirth(dateOfBirth, applicationDate),
+      manualReviewRequired: false,
     };
+  }
+
+  const birthYearKnown = toBoolean(getAnswerValue(responses, "BIRTH_YEAR_KNOWN"));
+  const shouldUseYearOfBirth = birthYearKnown === true || birthYearKnown === null;
+  const shouldUseApproximateAge = birthYearKnown === false || birthYearKnown === null;
+
+  if (shouldUseYearOfBirth) {
+    const yearOfBirthAnswer = getAnswerValue(responses, "YEAR_OF_BIRTH");
+    const yearOfBirth = yearOfBirthAnswer ? Number(yearOfBirthAnswer) : null;
+
+    if (Number.isInteger(yearOfBirth)) {
+      const ageFromYearOnly = applicationDate.getFullYear() - yearOfBirth;
+
+      return {
+        source: "YEAR_OF_BIRTH",
+        dateOfBirth: null,
+        yearOfBirth,
+        approximateAge: null,
+        ageAtApplication: ageFromYearOnly,
+        manualReviewRequired: false,
+      };
+    }
+  }
+
+  if (shouldUseApproximateAge) {
+    const approximateAgeAnswer = getAnswerValue(responses, "APPROXIMATE_AGE");
+    const approximateAge = approximateAgeAnswer ? Number(approximateAgeAnswer) : null;
+
+    if (Number.isFinite(approximateAge)) {
+      return {
+        source: "APPROXIMATE_AGE",
+        dateOfBirth: null,
+        yearOfBirth: null,
+        approximateAge,
+        ageAtApplication: approximateAge,
+        manualReviewRequired: false,
+      };
+    }
   }
 
   return {
     source: null,
     dateOfBirth: null,
     yearOfBirth: null,
+    approximateAge: null,
     ageAtApplication: null,
+    manualReviewRequired: false,
   };
 }
 
@@ -412,47 +669,67 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function answerToText(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function answerToNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function hasPreviousSightsaversTraining(responses = []) {
+  const answer = getAnswerValue(responses, "PREVIOUS_SIGHTSAVERS_TRAINING");
+
+  if (!Array.isArray(answer)) return toBoolean(answer);
+
+  const noPreviousTraining = "I have not undertaken training with Sightsavers before";
+  const selectedTraining = answer.filter((item) => item !== noPreviousTraining);
+
+  return selectedTraining.length > 0;
+}
+
+function buildDignifiedWorkResponse(responses = []) {
+  const fields = [
+    ["FAMILY_RESPECTS_WORK", "Does your family think your work is honest and respected?"],
+    ["WORKPLACE_RESPECT", "Are you treated with respect at your workplace?"],
+    ["TREATED_SAME_AS_COWORKERS", "Are you treated the same as your co-workers at your workplace?"],
+    ["WORK_MAKES_PROUD", "Does your work make you feel proud?"],
+    ["WORK_GIVES_PURPOSE", "Does your work give you a purpose?"],
+  ];
+
+  const values = fields
+    .map(([code, label]) => ({ code, label, answer: getAnswerValue(responses, code) }))
+    .filter((item) => item.answer !== undefined && item.answer !== null && item.answer !== "");
+
+  return values.length > 0 ? JSON.stringify(values) : null;
+}
+
+function buildCurrentBusinessDetails(responses = []) {
+  const businessStartDate = getAnswerValue(responses, "BUSINESS_START_DATE");
+  const currentEmployees = getAnswerValue(responses, "CURRENT_EMPLOYEES");
+
+  if (!businessStartDate && !currentEmployees) return null;
+
+  return JSON.stringify({
+    businessStartDate: businessStartDate || null,
+    currentEmployees: currentEmployees || null,
+  });
+}
+
 function getDisabilityEvidence(responses = []) {
   const hasDisabilityAnswer = getAnswerValue(responses, "HAS_DISABILITY");
-  const registrationStatusAnswer = getAnswerValue(
-    responses,
-    "DISABILITY_REGISTRATION_STATUS"
-  );
-
   const booleanValue = toBoolean(hasDisabilityAnswer);
-  const registrationStatus = normalizeText(registrationStatusAnswer);
-
-  const indicatesDisabilityByStatus =
-    registrationStatus.includes("registered") ||
-    registrationStatus.includes("not registered") ||
-    registrationStatus.includes("unregistered") ||
-    registrationStatus.startsWith("yes");
-
-  const indicatesNoDisabilityByStatus =
-    registrationStatus === "no" ||
-    registrationStatus.includes("no disability") ||
-    registrationStatus.includes("not disabled");
-
-  let hasDisability = booleanValue;
-
-  if (hasDisability === null && indicatesDisabilityByStatus) {
-    hasDisability = true;
-  }
-
-  if (hasDisability === null && indicatesNoDisabilityByStatus) {
-    hasDisability = false;
-  }
 
   return {
-    hasDisability,
-    registrationStatus: registrationStatusAnswer || null,
-    isRegisteredPwd:
-      registrationStatus.includes("registered") &&
-      !registrationStatus.includes("not registered") &&
-      !registrationStatus.includes("unregistered"),
-    isUnregisteredPwd:
-      registrationStatus.includes("not registered") ||
-      registrationStatus.includes("unregistered"),
+    hasDisability: booleanValue,
+    registrationStatus: null,
+    isRegisteredPwd: false,
+    isUnregisteredPwd: false,
   };
 }
 
@@ -479,9 +756,11 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
   criterionResults.age = {
     source: ageEvidence.source,
     ageAtApplication: ageEvidence.ageAtApplication,
+    minEligibleAge: MIN_ELIGIBLE_AGE,
     maxEligibleAge: MAX_ELIGIBLE_AGE,
     passed:
       ageEvidence.ageAtApplication !== null &&
+      ageEvidence.ageAtApplication >= MIN_ELIGIBLE_AGE &&
       ageEvidence.ageAtApplication <= MAX_ELIGIBLE_AGE,
   };
 
@@ -492,6 +771,10 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     ageEvidence.ageAtApplication > MAX_REASONABLE_AGE
   ) {
     reasonCodes.push("AGE_DATA_OUTLIER");
+  } else if (ageEvidence.manualReviewRequired) {
+    reasonCodes.push("AGE_NEEDS_MANUAL_REVIEW");
+  } else if (ageEvidence.ageAtApplication < MIN_ELIGIBLE_AGE) {
+    reasonCodes.push("UNDER_AGE");
   } else if (ageEvidence.ageAtApplication > MAX_ELIGIBLE_AGE) {
     reasonCodes.push("OVER_AGE");
   }
@@ -502,50 +785,22 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     passed: disabilityEvidence.hasDisability === true,
   };
 
-  const normalizedDisabilityRegistrationStatus = normalizeText(
-    disabilityEvidence.registrationStatus
-  );
-
   if (disabilityEvidence.hasDisability === false) {
     reasonCodes.push("NO_DISABILITY");
   } else if (disabilityEvidence.hasDisability === null) {
     reasonCodes.push("DISABILITY_STATUS_UNCONFIRMED");
   }
 
-  if (
-    disabilityEvidence.hasDisability === true &&
-    !normalizedDisabilityRegistrationStatus
-  ) {
-    reasonCodes.push("DISABILITY_REGISTRATION_STATUS_MISSING");
-  }
-
-  if (
-    normalizedDisabilityRegistrationStatus.includes("not sure") ||
-    normalizedDisabilityRegistrationStatus.includes("prefer not")
-  ) {
-    reasonCodes.push("DISABILITY_REGISTRATION_STATUS_UNCONFIRMED");
-  }
-
-  if (disabilityEvidence.isUnregisteredPwd) {
-    reasonCodes.push("UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW");
-  }
-
-  if (
-    disabilityEvidence.hasDisability === true &&
-    normalizedDisabilityRegistrationStatus === "no"
-  ) {
-    reasonCodes.push("DISABILITY_STATUS_CONFLICT");
-  }
-
   // Initial eligibility only decides whether the applicant can proceed to the
   // Basic IT Skills Test. Document and disability registration evidence is
   // reviewed later by the committee together with the test result.
-  const blockingReasonCodes = ["OVER_AGE", "NO_DISABILITY"];
+  const blockingReasonCodes = ["UNDER_AGE", "OVER_AGE", "NO_DISABILITY"];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
     "DISABILITY_STATUS_UNCONFIRMED",
     "DISABILITY_STATUS_CONFLICT",
+    "AGE_NEEDS_MANUAL_REVIEW",
   ];
 
   let screeningStatus = "ELIGIBLE";
@@ -577,6 +832,7 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     ageAtApplication: ageEvidence.ageAtApplication,
     dateOfBirth: ageEvidence.dateOfBirth,
     yearOfBirth: ageEvidence.yearOfBirth,
+    approximateAge: ageEvidence.approximateAge,
     reasonCodes,
     criterionResults,
     publicFeedback,
@@ -671,7 +927,10 @@ async function saveRegistrationDraft(req, res) {
       ? Math.max(0, Number(req.body.currentStep))
       : 0;
 
-    const contactNumber = answers.CONTACT_NUMBER || req.body.contactNumber || null;
+    const country = answers.COUNTRY || req.body.country || null;
+    const contactNumber = answers.CONTACT_NUMBER
+      ? normalizePhoneNumberForCountry(answers.CONTACT_NUMBER, country)
+      : req.body.contactNumber || null;
     const email = answers.EMAIL || req.body.email || null;
     const normalizedContactNumber = normalizeContactNumber(contactNumber);
     const normalizedEmail = normalizeEmail(email);
@@ -875,6 +1134,10 @@ async function submitRegistration(req, res) {
 
     const submittedDraftReference = String(req.body.draftReference || "").trim().toUpperCase();
 
+    if (Array.isArray(parsedResponses)) {
+      parsedResponses = prepareResponsesForSubmission(parsedResponses, req.body.pathway);
+    }
+
     if (!Array.isArray(parsedResponses) || parsedResponses.length === 0) {
       return res.status(400).json({
         message: "Registration responses are required.",
@@ -1010,15 +1273,13 @@ async function submitRegistration(req, res) {
 
           yearOfBirth: eligibilityResult.yearOfBirth,
 
-          approximateAge: null,
+          approximateAge: eligibilityResult.approximateAge,
 
           ageAtApplication: eligibilityResult.ageAtApplication,
 
           sex: getAnswerValue(parsedResponses, "SEX"),
 
-          householdSize: getAnswerValue(parsedResponses, "HOUSEHOLD_SIZE")
-            ? Number(getAnswerValue(parsedResponses, "HOUSEHOLD_SIZE"))
-            : null,
+          householdSize: answerToNumber(getAnswerValue(parsedResponses, "HOUSEHOLD_SIZE")),
 
           educationLevel: getAnswerValue(parsedResponses, "EDUCATION_LEVEL"),
           courseStudied: getAnswerValue(parsedResponses, "COURSE_STUDIED"),
@@ -1040,9 +1301,8 @@ async function submitRegistration(req, res) {
             "OTHER_DISABILITY_TYPE"
           ),
 
-          accessibilityNeeds: getAnswerValue(
-            parsedResponses,
-            "ACCESSIBILITY_NEEDS"
+          accessibilityNeeds: answerToText(
+            getAnswerValue(parsedResponses, "ACCESSIBILITY_NEEDS")
           ),
 
           canParticipateOnline: toBoolean(
@@ -1053,9 +1313,8 @@ async function submitRegistration(req, res) {
             getAnswerValue(parsedResponses, "HAS_DEVICE_ACCESS")
           ),
 
-          heardAboutProject: getAnswerValue(
-            parsedResponses,
-            "HEARD_ABOUT_PROJECT"
+          heardAboutProject: answerToText(
+            getAnswerValue(parsedResponses, "HEARD_ABOUT_PROJECT")
           ),
 
           nextOfKinName: getAnswerValue(parsedResponses, "NEXT_OF_KIN_NAME"),
@@ -1070,34 +1329,25 @@ async function submitRegistration(req, res) {
           ),
           consentedAt: eligibilityResult.screenedAt,
 
-          previousSightsaversTraining: toBoolean(
-            getAnswerValue(parsedResponses, "PREVIOUS_SIGHTSAVERS_TRAINING")
-          ),
+          previousSightsaversTraining: hasPreviousSightsaversTraining(parsedResponses),
 
           motivation: getAnswerValue(parsedResponses, "MOTIVATION"),
 
           employmentStatus: getAnswerValue(parsedResponses, "EMPLOYMENT_STATUS"),
-          jobSearchActions: getAnswerValue(parsedResponses, "JOB_SEARCH_ACTIONS"),
+          jobSearchActions: answerToText(getAnswerValue(parsedResponses, "JOB_SEARCH_ACTIONS")),
 
-          monthlyIncomeRange: getAnswerValue(
-            parsedResponses,
-            "MONTHLY_INCOME_RANGE"
+          monthlyIncomeRange: answerToText(
+            getAnswerValue(parsedResponses, "MONTHLY_INCOME_LOCAL_CURRENCY")
           ),
 
-          dignifiedWorkResponse: getAnswerValue(
-            parsedResponses,
-            "DIGNIFIED_WORK_RESPONSE"
-          ),
+          dignifiedWorkResponse: buildDignifiedWorkResponse(parsedResponses),
 
           careerAspirations: getAnswerValue(
             parsedResponses,
             "CAREER_ASPIRATIONS"
           ),
 
-          currentBusinessDetails: getAnswerValue(
-            parsedResponses,
-            "CURRENT_BUSINESS_DETAILS"
-          ),
+          currentBusinessDetails: buildCurrentBusinessDetails(parsedResponses),
 
           preferredSector: getAnswerValue(parsedResponses, "PREFERRED_SECTOR"),
 
@@ -1287,6 +1537,7 @@ async function submitRegistration(req, res) {
       participantCode: publicParticipantCode,
       applicationReference: publicApplicationReference,
       submittedAt: applicant.createdAt,
+      contactNumber: applicant.contactNumber,
 
       data: {
         applicantId: canTrackApplication ? applicant.id : null,
@@ -1321,6 +1572,7 @@ async function submitRegistration(req, res) {
               ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
               : applicantEligibilityMessage,
         submittedAt: applicant.createdAt,
+        contactNumber: applicant.contactNumber,
       },
     });
   } catch (error) {
