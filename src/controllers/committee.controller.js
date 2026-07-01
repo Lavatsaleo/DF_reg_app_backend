@@ -67,8 +67,26 @@ function formatApplicantName(applicant) {
   return [applicant?.firstName, applicant?.lastName].filter(Boolean).join(" ").trim();
 }
 
+function summarizeLinkedStaffUser(user) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    fullName: user.fullName,
+    email: user.email,
+    role: user.role,
+    isActive: user.isActive,
+    authProvider: user.authProvider || "LOCAL",
+    lastLoginAt: user.lastLoginAt,
+  };
+}
+
 function summarizeMember(member, workload = {}) {
   if (!member) return null;
+
+  const linkedStaffUsers = Array.isArray(member.staffUsers)
+    ? member.staffUsers.map(summarizeLinkedStaffUser).filter(Boolean)
+    : [];
 
   return {
     id: member.id,
@@ -80,6 +98,8 @@ function summarizeMember(member, workload = {}) {
     notes: member.notes,
     createdAt: member.createdAt,
     updatedAt: member.updatedAt,
+    hasLogin: linkedStaffUsers.some((user) => user.isActive),
+    linkedStaffUsers,
     workload: {
       pending: workload.pending || 0,
       completed: workload.completed || 0,
@@ -234,6 +254,7 @@ async function listCommitteeMembers(req, res) {
     const members = await prisma.committeeMember.findMany({
       where: includeInactive ? {} : { isActive: true },
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
+      include: { staffUsers: true },
     });
 
     return res.json({
@@ -338,6 +359,109 @@ async function createCommitteeMember(req, res) {
   }
 }
 
+async function createCommitteeMemberLogin(req, res) {
+  try {
+    const memberId = req.params.memberId;
+    const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
+
+    if (!temporaryPassword || temporaryPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Temporary password must be at least 8 characters.",
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      const member = await tx.committeeMember.findUnique({
+        where: { id: memberId },
+        include: { staffUsers: true },
+      });
+
+      if (!member) {
+        const err = new Error("Committee member not found.");
+        err.statusCode = 404;
+        throw err;
+      }
+
+      const role = member.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
+      const existingLinkedUser = member.staffUsers.find((user) => user.isActive);
+
+      if (existingLinkedUser) {
+        const updatedUser = await tx.staffUser.update({
+          where: { id: existingLinkedUser.id },
+          data: {
+            fullName: member.fullName,
+            email: member.email,
+            role,
+            passwordHash: hashPassword(temporaryPassword),
+            authProvider: "LOCAL",
+            isActive: true,
+            lastPasswordResetAt: new Date(),
+            tokenVersion: { increment: 1 },
+          },
+          include: { committeeMember: true },
+        });
+
+        return { member, staffUser: updatedUser, mode: "updated" };
+      }
+
+      const existingUserByEmail = await tx.staffUser.findUnique({
+        where: { email: member.email },
+      });
+
+      if (existingUserByEmail) {
+        const updatedUser = await tx.staffUser.update({
+          where: { id: existingUserByEmail.id },
+          data: {
+            fullName: member.fullName,
+            role,
+            committeeMemberId: member.id,
+            passwordHash: hashPassword(temporaryPassword),
+            authProvider: "LOCAL",
+            isActive: true,
+            lastPasswordResetAt: new Date(),
+            tokenVersion: { increment: 1 },
+          },
+          include: { committeeMember: true },
+        });
+
+        return { member, staffUser: updatedUser, mode: "linked" };
+      }
+
+      const staffUser = await tx.staffUser.create({
+        data: {
+          fullName: member.fullName,
+          email: member.email,
+          passwordHash: hashPassword(temporaryPassword),
+          role,
+          committeeMemberId: member.id,
+          authProvider: "LOCAL",
+          isActive: true,
+        },
+        include: { committeeMember: true },
+      });
+
+      return { member, staffUser, mode: "created" };
+    });
+
+    return res.status(result.mode === "created" ? 201 : 200).json({
+      success: true,
+      message: result.mode === "created"
+        ? "Committee member login created successfully."
+        : "Committee member login updated successfully.",
+      staffUser: summarizeLinkedStaffUser(result.staffUser),
+    });
+  } catch (error) {
+    console.error("Create committee member login error:", error);
+
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : "Failed to create committee member login.",
+      error: error.statusCode ? undefined : error.message,
+    });
+  }
+}
+
 async function updateCommitteeMember(req, res) {
   try {
     const memberId = req.params.memberId;
@@ -395,7 +519,10 @@ async function updateCommitteeMember(req, res) {
 async function getCommitteeOverview(req, res) {
   try {
     const [members, readyCount, unassignedReadyCount, assignmentCounts] = await Promise.all([
-      prisma.committeeMember.findMany({ orderBy: [{ role: "asc" }, { fullName: "asc" }] }),
+      prisma.committeeMember.findMany({
+        orderBy: [{ role: "asc" }, { fullName: "asc" }],
+        include: { staffUsers: true },
+      }),
       prisma.applicant.count({ where: { status: READY_FOR_COMMITTEE_STATUS } }),
       prisma.applicant.count({
         where: {
@@ -830,6 +957,7 @@ async function submitCommitteeReview(req, res) {
 module.exports = {
   listCommitteeMembers,
   createCommitteeMember,
+  createCommitteeMemberLogin,
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,

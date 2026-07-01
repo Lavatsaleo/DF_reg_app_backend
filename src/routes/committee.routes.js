@@ -2,6 +2,7 @@ const express = require("express");
 const {
   listCommitteeMembers,
   createCommitteeMember,
+  createCommitteeMemberLogin,
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,
@@ -22,6 +23,7 @@ router.get("/overview", getCommitteeOverview);
 router.get("/members", listCommitteeMembers);
 router.post("/members", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMember);
 router.patch("/members/:memberId", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), updateCommitteeMember);
+router.post("/members/:memberId/login", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMemberLogin);
 
 router.get("/assignments", listCommitteeAssignments);
 router.get("/unassigned-ready", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), listUnassignedReadyApplicants);
