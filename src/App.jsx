@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import axios from "axios";
 import AccessibilityToolbar from "./components/AccessibilityToolbar";
 import AppNavbar from "./components/AppNavbar";
 import LandingPage from "./pages/LandingPage";
@@ -6,12 +7,22 @@ import RegistrationPage from "./pages/RegistrationPage";
 import StatusCheckPage from "./pages/StatusCheckPage";
 import SkillsTestPage from "./pages/SkillsTestPage";
 import CommitteeDashboardPage from "./pages/CommitteeDashboardPage";
+import StaffLoginPage from "./pages/StaffLoginPage";
 import { useAccessibilityPreferences } from "./hooks/useAccessibilityPreferences";
 import { useRegistrationForm } from "./hooks/useRegistrationForm";
+import { clearStaffSession, loadStaffSession, saveStaffSession } from "./utils/staffAuthStorage";
 
 function getInitialSkillsTestToken() {
   const match = window.location.pathname.match(/^\/basic-skills-test\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : "";
+}
+
+function configureAxiosAuth(token) {
+  if (token) {
+    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  } else {
+    delete axios.defaults.headers.common.Authorization;
+  }
 }
 
 function App() {
@@ -21,6 +32,11 @@ function App() {
   const [currentView, setCurrentView] = useState(initialSkillsTestToken ? "skills-test" : "home");
   const [skillsTestReference, setSkillsTestReference] = useState("");
   const [skillsTestToken, setSkillsTestToken] = useState(initialSkillsTestToken);
+  const [staffSession, setStaffSession] = useState(() => loadStaffSession());
+
+  useEffect(() => {
+    configureAxiosAuth(staffSession?.token || "");
+  }, [staffSession?.token]);
 
   function resetBrowserPath() {
     if (window.location.pathname !== "/") {
@@ -47,10 +63,31 @@ function App() {
 
   function handleShowCommittee() {
     resetBrowserPath();
-    setCurrentView("committee");
+    setCurrentView(staffSession?.token ? "committee" : "staff-login");
     setSkillsTestReference("");
     setSkillsTestToken("");
     registration.handleBackToPathways();
+  }
+
+  function handleStaffLogin(session) {
+    saveStaffSession(session);
+    configureAxiosAuth(session.token);
+    setStaffSession(session);
+    setCurrentView("committee");
+  }
+
+  function handleStaffLogout() {
+    clearStaffSession();
+    configureAxiosAuth("");
+    setStaffSession(null);
+    setCurrentView("staff-login");
+  }
+
+  function handleSessionExpired() {
+    clearStaffSession();
+    configureAxiosAuth("");
+    setStaffSession(null);
+    setCurrentView("staff-login");
   }
 
   function handleShowSkillsTest(reference = "") {
@@ -81,7 +118,7 @@ function App() {
 
       <AppNavbar
         selectedPathway={registration.selectedPathway}
-        currentView={currentView}
+        currentView={currentView === "staff-login" ? "committee" : currentView}
         onBackToPathways={handleShowHome}
         onCheckStatus={handleShowStatus}
         showStatusButton={showStatusButton}
@@ -94,8 +131,15 @@ function App() {
         onResetPreferences={accessibility.resetPreferences}
       />
 
-      {currentView === "committee" ? (
-        <CommitteeDashboardPage onBackHome={handleShowHome} />
+      {currentView === "staff-login" ? (
+        <StaffLoginPage onLogin={handleStaffLogin} onBackHome={handleShowHome} />
+      ) : currentView === "committee" ? (
+        <CommitteeDashboardPage
+          staffUser={staffSession?.user}
+          onBackHome={handleShowHome}
+          onStaffLogout={handleStaffLogout}
+          onSessionExpired={handleSessionExpired}
+        />
       ) : currentView === "status" ? (
         <StatusCheckPage
           onBackHome={handleShowHome}
@@ -129,6 +173,10 @@ function App() {
           fieldErrors={registration.fieldErrors}
           formProgress={registration.formProgress}
           draftLastSavedAt={registration.draftLastSavedAt}
+          draftReference={registration.draftReference}
+          draftSaveStatus={registration.draftSaveStatus}
+          draftSaveMessage={registration.draftSaveMessage}
+          currentStep={registration.currentStep}
           onBackToPathways={handleShowHome}
           onCheckStatus={handleShowStatus}
           onTakeSkillsTest={handleShowSkillsTest}
@@ -139,6 +187,7 @@ function App() {
           onDocumentsChange={registration.setDocuments}
           onDocumentTypeChange={registration.setDocumentType}
           onClearDraft={registration.handleClearDraft}
+          onStepChange={registration.handleCurrentStepChange}
         />
       )}
     </>

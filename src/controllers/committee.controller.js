@@ -109,8 +109,8 @@ function summarizeMember(member, workload = {}) {
 }
 
 function summarizeSkillsTest(applicant) {
-  const attempt = applicant?.skillsTestAttempts?.[0];
-  if (!attempt) return null;
+  const attempt = applicant?.skillsTestAttempts?.find?.((item) => item.status === "SUBMITTED") || applicant?.skillsTestAttempts?.[0];
+  if (!attempt || attempt.status !== "SUBMITTED") return null;
 
   return {
     id: attempt.id,
@@ -139,6 +139,10 @@ function summarizeApplicant(applicant) {
     pathway: applicant.pathway,
     country: applicant.country,
     county: applicant.county,
+    subCounty: applicant.subCounty,
+    state: applicant.state,
+    region: applicant.region,
+    district: applicant.district,
     town: applicant.town,
     sex: applicant.sex,
     ageAtApplication: applicant.ageAtApplication,

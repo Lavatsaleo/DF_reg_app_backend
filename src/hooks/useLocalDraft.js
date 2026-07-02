@@ -28,7 +28,15 @@ function safeRemove(storageKey) {
   }
 }
 
-export function useLocalDraft({ storageKey, enabled, answers, documentType, onRestoreDraft }) {
+export function useLocalDraft({
+  storageKey,
+  enabled,
+  answers,
+  documentType,
+  draftReference,
+  currentStep,
+  onRestoreDraft,
+}) {
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const hasCompletedInitialRestore = useRef(false);
   const skipNextSave = useRef(false);
@@ -37,8 +45,10 @@ export function useLocalDraft({ storageKey, enabled, answers, documentType, onRe
     () => ({
       answers,
       documentType,
+      draftReference,
+      currentStep,
     }),
-    [answers, documentType]
+    [answers, documentType, draftReference, currentStep]
   );
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -53,6 +63,8 @@ export function useLocalDraft({ storageKey, enabled, answers, documentType, onRe
       onRestoreDraft?.({
         answers: storedDraft.answers || {},
         documentType: storedDraft.documentType,
+        draftReference: storedDraft.draftReference,
+        currentStep: storedDraft.currentStep,
       });
       setLastSavedAt(storedDraft.savedAt || null);
     } else {

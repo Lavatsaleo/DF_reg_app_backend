@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DocumentUploadSection from "./DocumentUploadSection";
 import FormErrorSummary from "./FormErrorSummary";
 import ResultAlert from "./ResultAlert";
@@ -41,6 +41,22 @@ function formatSavedTime(timestamp) {
   }
 }
 
+
+function getDraftStatusIcon(status) {
+  if (status === "saving") return "bi-cloud-arrow-up";
+  if (status === "saved") return "bi-cloud-check";
+  if (status === "error") return "bi-cloud-slash";
+  return "bi-device-hdd";
+}
+
+function getDraftStatusText({ status, message, lastSavedAt }) {
+  if (status === "saving") return message || "Saving draft to the portal...";
+  if (status === "saved") return `Draft saved to portal: ${formatSavedTime(lastSavedAt)}`;
+  if (status === "error") return message || "Draft saved on this device only.";
+  if (message) return message;
+  return `Draft saved: ${formatSavedTime(lastSavedAt)}`;
+}
+
 function RegistrationWizard({
   selectedPathway,
   groupedQuestions,
@@ -53,6 +69,10 @@ function RegistrationWizard({
   fieldErrors,
   formProgress,
   draftLastSavedAt,
+  draftReference,
+  draftSaveStatus,
+  draftSaveMessage,
+  currentStep = 0,
   onAnswerChange,
   onMultiSelectChange,
   onSubmit,
@@ -60,13 +80,15 @@ function RegistrationWizard({
   onDocumentsChange,
   onDocumentTypeChange,
   onClearDraft,
+  onStepChange,
 }) {
   const sectionEntries = useMemo(() => Object.entries(groupedQuestions), [groupedQuestions]);
   const documentStepIndex = sectionEntries.length;
   const reviewStepIndex = sectionEntries.length + 1;
   const totalSteps = sectionEntries.length + 2;
-  const [activeStep, setActiveStep] = useState(0);
+  const [activeStep, setActiveStep] = useState(() => Math.max(0, Number(currentStep) || 0));
   const [announcement, setAnnouncement] = useState("Start with the first section of the registration form.");
+  const hasAppliedRestoredStep = useRef(false);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -74,6 +96,21 @@ function RegistrationWizard({
       setActiveStep(0);
     }
   }, [activeStep, reviewStepIndex]);
+
+  useEffect(() => {
+    if (hasAppliedRestoredStep.current) return;
+
+    const restoredStep = Math.max(0, Math.min(Number(currentStep) || 0, reviewStepIndex));
+
+    if (restoredStep > 0) {
+      hasAppliedRestoredStep.current = true;
+      setActiveStep(restoredStep);
+    }
+  }, [currentStep, reviewStepIndex]);
+
+  useEffect(() => {
+    onStepChange?.(activeStep);
+  }, [activeStep, onStepChange]);
 
   useEffect(() => {
     const errorCodes = Object.keys(fieldErrors || {});
@@ -150,8 +187,9 @@ function RegistrationWizard({
         </div>
 
         <div className="ss-draft-status" aria-live="polite">
-          <i className="bi bi-cloud-check" aria-hidden="true" />
-          <span>Draft saved: {formatSavedTime(draftLastSavedAt)}</span>
+          <i className={`bi ${getDraftStatusIcon(draftSaveStatus)}`} aria-hidden="true" />
+          <span>{getDraftStatusText({ status: draftSaveStatus, message: draftSaveMessage, lastSavedAt: draftLastSavedAt })}</span>
+          {draftReference && <small>Draft ref: {draftReference}</small>}
           <button type="button" className="btn btn-sm ss-link-button" onClick={onClearDraft}>
             Clear
           </button>

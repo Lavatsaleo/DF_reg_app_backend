@@ -11,6 +11,8 @@ const EMPTY_MEMBER_FORM = {
   phone: "",
   role: "MEMBER",
   notes: "",
+  createLogin: false,
+  temporaryPassword: "",
 };
 
 const REVIEW_DECISIONS = [
@@ -65,7 +67,11 @@ function StatCard({ label, value, icon, tone = "blue" }) {
   );
 }
 
-function MemberWorkloadCard({ member, onToggleActive }) {
+function MemberWorkloadCard({ member, canManage, onToggleActive, onCreateLogin, creatingLoginForMemberId }) {
+  const [showLoginForm, setShowLoginForm] = useState(false);
+  const [temporaryPassword, setTemporaryPassword] = useState("");
+  const hasLogin = member.hasLogin === true;
+
   return (
     <article className="committee-member-card">
       <div className="committee-member-avatar" aria-hidden="true">
@@ -77,23 +83,68 @@ function MemberWorkloadCard({ member, onToggleActive }) {
             <h3>{member.fullName}</h3>
             <p>{member.email}</p>
           </div>
-          <span className={`committee-role-pill ${member.role === "CHAIRPERSON" ? "chair" : "member"}`}>
-            {member.role === "CHAIRPERSON" ? "Chairperson" : "Member"}
-          </span>
+          <div className="d-flex flex-wrap gap-2 align-items-start">
+            <span className={`committee-role-pill ${member.role === "CHAIRPERSON" ? "chair" : "member"}`}>
+              {member.role === "CHAIRPERSON" ? "Chairperson" : "Member"}
+            </span>
+            <span className={`committee-login-pill ${hasLogin ? "active" : "profile-only"}`}>
+              {hasLogin ? "Login enabled" : "Profile only"}
+            </span>
+          </div>
         </div>
         <div className="committee-workload-row" aria-label="Committee member workload">
           <span><strong>{member.workload?.pending || 0}</strong> pending</span>
           <span><strong>{member.workload?.completed || 0}</strong> completed</span>
           <span><strong>{member.workload?.total || 0}</strong> total</span>
         </div>
+
+        {canManage && showLoginForm && (
+          <form
+            className="committee-member-login-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onCreateLogin(member.id, temporaryPassword, () => {
+                setTemporaryPassword("");
+                setShowLoginForm(false);
+              });
+            }}
+          >
+            <input
+              type="password"
+              minLength="8"
+              value={temporaryPassword}
+              onChange={(event) => setTemporaryPassword(event.target.value)}
+              placeholder="Temporary password, minimum 8 characters"
+              required
+            />
+            <button
+              type="submit"
+              className="btn committee-small-action"
+              disabled={creatingLoginForMemberId === member.id}
+            >
+              {creatingLoginForMemberId === member.id ? "Saving..." : hasLogin ? "Reset login" : "Create login"}
+            </button>
+          </form>
+        )}
       </div>
-      <button
-        type="button"
-        className={`btn committee-small-action ${member.isActive ? "committee-danger-ghost" : "committee-success-ghost"}`}
-        onClick={() => onToggleActive(member)}
-      >
-        {member.isActive ? "Deactivate" : "Activate"}
-      </button>
+      {canManage && (
+        <div className="committee-member-actions">
+          <button
+            type="button"
+            className="btn committee-small-action"
+            onClick={() => setShowLoginForm((current) => !current)}
+          >
+            {showLoginForm ? "Cancel login" : hasLogin ? "Reset login" : "Create login"}
+          </button>
+          <button
+            type="button"
+            className={`btn committee-small-action ${member.isActive ? "committee-danger-ghost" : "committee-success-ghost"}`}
+            onClick={() => onToggleActive(member)}
+          >
+            {member.isActive ? "Deactivate" : "Activate"}
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -159,6 +210,29 @@ function AddMemberForm({ memberForm, onChange, onSubmit, submitting }) {
         />
       </label>
 
+      <label className="committee-login-check">
+        <input
+          type="checkbox"
+          checked={memberForm.createLogin}
+          onChange={(event) => onChange("createLogin", event.target.checked)}
+        />
+        Create a staff login for this committee member
+      </label>
+
+      {memberForm.createLogin && (
+        <label className="committee-notes-field">
+          Temporary password
+          <input
+            type="password"
+            minLength="8"
+            value={memberForm.temporaryPassword}
+            onChange={(event) => onChange("temporaryPassword", event.target.value)}
+            placeholder="Minimum 8 characters"
+            required
+          />
+        </label>
+      )}
+
       <div className="committee-form-actions">
         <button type="submit" className="btn committee-primary-action" disabled={submitting}>
           <i className="bi bi-person-plus" aria-hidden="true" /> {submitting ? "Adding..." : "Add member"}
@@ -166,6 +240,18 @@ function AddMemberForm({ memberForm, onChange, onSubmit, submitting }) {
       </div>
     </form>
   );
+}
+
+function formatApplicantLocation(applicant) {
+  return [
+    applicant?.country,
+    applicant?.county,
+    applicant?.subCounty,
+    applicant?.state,
+    applicant?.region,
+    applicant?.district,
+    applicant?.town,
+  ].filter(Boolean).join(" · ") || "Not available";
 }
 
 function ApplicantMiniProfile({ applicant }) {
@@ -191,7 +277,7 @@ function ApplicantMiniProfile({ applicant }) {
       </div>
       <div>
         <span>Location</span>
-        <strong>{[applicant.country, applicant.county, applicant.town].filter(Boolean).join(" · ") || "Not available"}</strong>
+        <strong>{formatApplicantLocation(applicant)}</strong>
       </div>
       <div>
         <span>Age at application</span>
@@ -277,7 +363,7 @@ function ApplicantsWaitingPanel({ applicants, onAssignApplicant, assigningApplic
   );
 }
 
-function AssignmentCard({ assignment, members, onSelect, onReassign, activeAssignmentId, reassigning }) {
+function AssignmentCard({ assignment, members, canReassign, onSelect, onReassign, activeAssignmentId, reassigning }) {
   const [toMemberId, setToMemberId] = useState(assignment.committeeMember?.id || "");
   const [reason, setReason] = useState("");
   const isActive = activeAssignmentId === assignment.id;
@@ -304,32 +390,34 @@ function AssignmentCard({ assignment, members, onSelect, onReassign, activeAssig
         )}
       </div>
 
-      <div className="committee-reassign-row">
-        <select value={toMemberId} onChange={(event) => setToMemberId(event.target.value)}>
-          <option value="">Reassign to...</option>
-          {members
-            .filter((member) => member.isActive && member.role === "MEMBER")
-            .map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.fullName}
-              </option>
-            ))}
-        </select>
-        <input
-          type="text"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          placeholder="Reason for reassignment"
-        />
-        <button
-          type="button"
-          className="btn committee-small-action"
-          disabled={!toMemberId || toMemberId === assignment.committeeMember?.id || reassigning}
-          onClick={() => onReassign(assignment.id, toMemberId, reason)}
-        >
-          Reassign
-        </button>
-      </div>
+      {canReassign && (
+        <div className="committee-reassign-row">
+          <select value={toMemberId} onChange={(event) => setToMemberId(event.target.value)}>
+            <option value="">Reassign to...</option>
+            {members
+              .filter((member) => member.isActive && member.role === "MEMBER")
+              .map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.fullName}
+                </option>
+              ))}
+          </select>
+          <input
+            type="text"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Reason for reassignment"
+          />
+          <button
+            type="button"
+            className="btn committee-small-action"
+            disabled={!toMemberId || toMemberId === assignment.committeeMember?.id || reassigning}
+            onClick={() => onReassign(assignment.id, toMemberId, reason)}
+          >
+            Reassign
+          </button>
+        </div>
+      )}
     </article>
   );
 }
@@ -438,7 +526,7 @@ function ReviewPanel({ assignment, onStartReview, onSubmitReview, submittingRevi
   );
 }
 
-function CommitteeDashboardPage({ onBackHome }) {
+function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessionExpired }) {
   const [overview, setOverview] = useState(null);
   const [members, setMembers] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -456,11 +544,28 @@ function CommitteeDashboardPage({ onBackHome }) {
   const [assigningApplicantId, setAssigningApplicantId] = useState("");
   const [reassigning, setReassigning] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [creatingLoginForMemberId, setCreatingLoginForMemberId] = useState("");
+
+  const userRole = staffUser?.role || "";
+  const canManageCommittee = ["ADMIN", "COMMITTEE_CHAIRPERSON"].includes(userRole);
+  const canViewUnassignedApplicants = ["ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"].includes(userRole);
+  const canReassignApplicants = canManageCommittee;
 
   const selectedAssignmentFromList = useMemo(() => {
     if (!selectedAssignment?.id) return selectedAssignment;
     return assignments.find((assignment) => assignment.id === selectedAssignment.id) || selectedAssignment;
   }, [assignments, selectedAssignment]);
+
+  function handleApiError(errorObject, fallbackMessage) {
+    const status = errorObject.response?.status;
+    if (status === 401) {
+      setError("Your staff session has expired. Please sign in again.");
+      onSessionExpired?.();
+      return;
+    }
+
+    setError(errorObject.response?.data?.message || fallbackMessage);
+  }
 
   async function loadCommitteeData() {
     setLoading(true);
@@ -468,22 +573,27 @@ function CommitteeDashboardPage({ onBackHome }) {
 
     try {
       const query = new URLSearchParams();
-      if (filterMemberId) query.set("memberId", filterMemberId);
+      if (filterMemberId && !["COMMITTEE_MEMBER"].includes(userRole)) query.set("memberId", filterMemberId);
       if (filterStatus) query.set("status", filterStatus);
       if (search.trim()) query.set("search", search.trim());
 
-      const [overviewResponse, assignmentsResponse, unassignedResponse] = await Promise.all([
+      const requests = [
         axios.get(`${API_BASE_URL}/api/committee/overview`),
         axios.get(`${API_BASE_URL}/api/committee/assignments?${query.toString()}`),
-        axios.get(`${API_BASE_URL}/api/committee/unassigned-ready`),
-      ]);
+      ];
+
+      if (canViewUnassignedApplicants) {
+        requests.push(axios.get(`${API_BASE_URL}/api/committee/unassigned-ready`));
+      }
+
+      const [overviewResponse, assignmentsResponse, unassignedResponse] = await Promise.all(requests);
 
       setOverview(overviewResponse.data?.overview || null);
       setMembers(overviewResponse.data?.members || []);
       setAssignments(assignmentsResponse.data?.assignments || []);
-      setUnassignedApplicants(unassignedResponse.data?.applicants || []);
+      setUnassignedApplicants(canViewUnassignedApplicants ? (unassignedResponse?.data?.applicants || []) : []);
     } catch (loadError) {
-      setError(loadError.response?.data?.message || "Failed to load committee dashboard data.");
+      handleApiError(loadError, "Failed to load committee dashboard data.");
     } finally {
       setLoading(false);
     }
@@ -506,7 +616,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setMemberForm(EMPTY_MEMBER_FORM);
       await loadCommitteeData();
     } catch (submitError) {
-      setError(submitError.response?.data?.message || "Failed to add committee member.");
+      handleApiError(submitError, "Failed to add committee member.");
     } finally {
       setAddingMember(false);
     }
@@ -523,7 +633,26 @@ function CommitteeDashboardPage({ onBackHome }) {
       setMessage(response.data?.message || "Committee member updated.");
       await loadCommitteeData();
     } catch (toggleError) {
-      setError(toggleError.response?.data?.message || "Failed to update committee member.");
+      handleApiError(toggleError, "Failed to update committee member.");
+    }
+  }
+
+  async function handleCreateMemberLogin(memberId, temporaryPassword, onSuccess) {
+    setCreatingLoginForMemberId(memberId);
+    setMessage("");
+    setError("");
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/committee/members/${memberId}/login`, {
+        temporaryPassword,
+      });
+      setMessage(response.data?.message || "Committee member login saved.");
+      onSuccess?.();
+      await loadCommitteeData();
+    } catch (loginError) {
+      handleApiError(loginError, "Failed to create committee member login.");
+    } finally {
+      setCreatingLoginForMemberId("");
     }
   }
 
@@ -537,7 +666,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setMessage(response.data?.message || "Automatic assignment completed.");
       await loadCommitteeData();
     } catch (assignError) {
-      setError(assignError.response?.data?.message || "Failed to run automatic assignment.");
+      handleApiError(assignError, "Failed to run automatic assignment.");
     } finally {
       setAssigning(false);
     }
@@ -553,7 +682,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setMessage(response.data?.message || "Applicant assigned successfully.");
       await loadCommitteeData();
     } catch (assignError) {
-      setError(assignError.response?.data?.message || "Failed to assign applicant.");
+      handleApiError(assignError, "Failed to assign applicant.");
     } finally {
       setAssigningApplicantId("");
     }
@@ -573,7 +702,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setSelectedAssignment(response.data?.assignment || selectedAssignment);
       await loadCommitteeData();
     } catch (reassignError) {
-      setError(reassignError.response?.data?.message || "Failed to reassign applicant.");
+      handleApiError(reassignError, "Failed to reassign applicant.");
     } finally {
       setReassigning(false);
     }
@@ -589,7 +718,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setSelectedAssignment(response.data?.assignment || selectedAssignment);
       await loadCommitteeData();
     } catch (startError) {
-      setError(startError.response?.data?.message || "Failed to start review.");
+      handleApiError(startError, "Failed to start review.");
     }
   }
 
@@ -604,7 +733,7 @@ function CommitteeDashboardPage({ onBackHome }) {
       setSelectedAssignment(response.data?.assignment || selectedAssignment);
       await loadCommitteeData();
     } catch (reviewError) {
-      setError(reviewError.response?.data?.message || "Failed to submit committee review.");
+      handleApiError(reviewError, "Failed to submit committee review.");
     } finally {
       setSubmittingReview(false);
     }
@@ -624,9 +753,12 @@ function CommitteeDashboardPage({ onBackHome }) {
           </p>
         </div>
         <div className="committee-hero-card">
-          <span>Review stage</span>
-          <strong>Post-test selection</strong>
-          <p>Applicants appear here after completing the Basic IT Skills Test.</p>
+          <span>Signed in as</span>
+          <strong>{staffUser?.fullName || "Staff user"}</strong>
+          <p>{String(userRole || "STAFF").replace(/_/g, " ").toLowerCase()}</p>
+          <button type="button" className="btn committee-secondary-action" onClick={onStaffLogout}>
+            <i className="bi bi-box-arrow-right" aria-hidden="true" /> Sign out
+          </button>
         </div>
       </section>
 
@@ -650,9 +782,11 @@ function CommitteeDashboardPage({ onBackHome }) {
             <button type="button" className="btn committee-secondary-action" onClick={loadCommitteeData} disabled={loading}>
               <i className="bi bi-arrow-clockwise" aria-hidden="true" /> Refresh
             </button>
-            <button type="button" className="btn committee-primary-action" onClick={handleAutoAssign} disabled={assigning}>
-              <i className="bi bi-magic" aria-hidden="true" /> {assigning ? "Assigning..." : "Auto-assign ready applicants"}
-            </button>
+            {canManageCommittee && (
+              <button type="button" className="btn committee-primary-action" onClick={handleAutoAssign} disabled={assigning}>
+                <i className="bi bi-magic" aria-hidden="true" /> {assigning ? "Assigning..." : "Auto-assign ready applicants"}
+              </button>
+            )}
           </div>
         </div>
 
@@ -675,12 +809,14 @@ function CommitteeDashboardPage({ onBackHome }) {
 
         <div className="committee-layout">
           <div className="committee-management-grid">
-            <AddMemberForm
-              memberForm={memberForm}
-              onChange={(field, value) => setMemberForm((current) => ({ ...current, [field]: value }))}
-              onSubmit={handleAddMember}
-              submitting={addingMember}
-            />
+            {canManageCommittee && (
+              <AddMemberForm
+                memberForm={memberForm}
+                onChange={(field, value) => setMemberForm((current) => ({ ...current, [field]: value }))}
+                onSubmit={handleAddMember}
+                submitting={addingMember}
+              />
+            )}
 
             <section className="committee-section-card committee-workload-card">
               <div className="committee-section-header">
@@ -695,7 +831,14 @@ function CommitteeDashboardPage({ onBackHome }) {
                   <p className="committee-empty-text">No committee members have been added yet.</p>
                 ) : (
                   members.map((member) => (
-                    <MemberWorkloadCard key={member.id} member={member} onToggleActive={handleToggleMember} />
+                    <MemberWorkloadCard
+                      key={member.id}
+                      member={member}
+                      canManage={canManageCommittee}
+                      onToggleActive={handleToggleMember}
+                      onCreateLogin={handleCreateMemberLogin}
+                      creatingLoginForMemberId={creatingLoginForMemberId}
+                    />
                   ))
                 )}
               </div>
@@ -716,12 +859,14 @@ function CommitteeDashboardPage({ onBackHome }) {
                   onChange={(event) => setSearch(event.target.value)}
                   placeholder="Search name, ID, phone, or reference"
                 />
-                <select value={filterMemberId} onChange={(event) => setFilterMemberId(event.target.value)}>
-                  <option value="">All members</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>{member.fullName}</option>
-                  ))}
-                </select>
+                {userRole !== "COMMITTEE_MEMBER" && (
+                  <select value={filterMemberId} onChange={(event) => setFilterMemberId(event.target.value)}>
+                    <option value="">All members</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={member.id}>{member.fullName}</option>
+                    ))}
+                  </select>
+                )}
                 <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)}>
                   <option value="">All statuses</option>
                   <option value="ASSIGNED">Assigned</option>
@@ -748,6 +893,7 @@ function CommitteeDashboardPage({ onBackHome }) {
                       key={assignment.id}
                       assignment={assignment}
                       members={members}
+                      canReassign={canReassignApplicants}
                       activeAssignmentId={selectedAssignmentFromList?.id}
                       reassigning={reassigning}
                       onSelect={setSelectedAssignment}

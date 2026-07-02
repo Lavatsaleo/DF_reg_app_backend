@@ -58,6 +58,32 @@ function shouldIncludeQuestionInSubmission(question, answers) {
   return isQuestionVisible(question, answers);
 }
 
+function getDigitsOnly(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function hasEnoughInformationForPortalDraft({ draftReference, answers }) {
+  if (draftReference) return true;
+  return getDigitsOnly(answers?.CONTACT_NUMBER).length >= 7;
+}
+
+const LOCATION_DEPENDENT_QUESTIONS = {
+  COUNTRY: ["COUNTY", "SUB_COUNTY", "STATE", "REGION", "DISTRICT"],
+  COUNTY: ["SUB_COUNTY"],
+  STATE: ["DISTRICT"],
+  REGION: ["DISTRICT"],
+};
+
+function clearDependentLocationAnswers(questionCode, nextAnswers) {
+  const dependentQuestionCodes = LOCATION_DEPENDENT_QUESTIONS[questionCode] || [];
+
+  dependentQuestionCodes.forEach((dependentQuestionCode) => {
+    delete nextAnswers[dependentQuestionCode];
+  });
+
+  return dependentQuestionCodes;
+}
+
 export function useRegistrationForm() {
   const [selectedPathway, setSelectedPathway] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -70,6 +96,13 @@ export function useRegistrationForm() {
   const [errorMessage, setErrorMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
   const [pathwayMessage, setPathwayMessage] = useState("");
+  const [serverDraftReference, setServerDraftReference] = useState("");
+  const [portalDraftLastSavedAt, setPortalDraftLastSavedAt] = useState(null);
+  const [draftSaveStatus, setDraftSaveStatus] = useState("waiting_for_mobile");
+  const [draftSaveMessage, setDraftSaveMessage] = useState(
+    "Draft is saved on this device. Enter a mobile number to also save it to the portal."
+  );
+  const [currentStep, setCurrentStep] = useState(0);
 
   const draftStorageKey = selectedPathway
     ? `sightsavers-registration-draft-${selectedPathway.id}`
@@ -86,6 +119,16 @@ export function useRegistrationForm() {
     if (draft.documentType) {
       setDocumentType(draft.documentType);
     }
+
+    if (draft.draftReference) {
+      setServerDraftReference(draft.draftReference);
+      setDraftSaveStatus("saved");
+      setDraftSaveMessage("Draft restored from this device and linked to the portal draft record.");
+    }
+
+    if (Number.isFinite(Number(draft.currentStep))) {
+      setCurrentStep(Math.max(0, Number(draft.currentStep)));
+    }
   }, [selectedPathway]);
 
   const { lastSavedAt: draftLastSavedAt, clearDraft } = useLocalDraft({
@@ -93,8 +136,73 @@ export function useRegistrationForm() {
     enabled: Boolean(selectedPathway),
     answers,
     documentType,
+    draftReference: serverDraftReference,
+    currentStep,
     onRestoreDraft: restoreDraft,
   });
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!selectedPathway) return;
+
+    const hasAnswers = Object.values(answers).some((value) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== undefined && value !== null && value !== "";
+    });
+
+    if (!hasAnswers) {
+      setDraftSaveStatus("waiting_for_mobile");
+      setDraftSaveMessage("Draft is saved on this device. Enter a mobile number to also save it to the portal.");
+      return;
+    }
+
+    if (!hasEnoughInformationForPortalDraft({ draftReference: serverDraftReference, answers })) {
+      setDraftSaveStatus("waiting_for_mobile");
+      setDraftSaveMessage("Draft is saved on this device. Enter a mobile number to also save it to the portal.");
+      return;
+    }
+
+    let isCurrentSave = true;
+    const saveTimeout = window.setTimeout(async () => {
+      try {
+        setDraftSaveStatus("saving");
+        setDraftSaveMessage("Saving draft to the portal...");
+
+        const response = await axios.post(`${API_BASE_URL}/api/registrations/drafts`, {
+          draftReference: serverDraftReference || undefined,
+          pathway: selectedPathway.id,
+          documentType,
+          currentStep,
+          answers: {
+            ...answers,
+            COURSE_APPLIED_FOR: selectedPathway.title,
+          },
+        });
+
+        if (!isCurrentSave) return;
+
+        const savedDraft = response.data?.data || {};
+        setServerDraftReference(savedDraft.draftReference || serverDraftReference || "");
+        setPortalDraftLastSavedAt(savedDraft.lastSavedAt || savedDraft.savedAt || new Date().toISOString());
+        setDraftSaveStatus("saved");
+        setDraftSaveMessage("Draft saved to the portal.");
+      } catch (error) {
+        if (!isCurrentSave) return;
+
+        const apiMessage = error.response?.data?.message;
+        setDraftSaveStatus("error");
+        setDraftSaveMessage(
+          apiMessage || "Draft is still saved on this device, but it could not be saved to the portal."
+        );
+      }
+    }, 1200);
+
+    return () => {
+      isCurrentSave = false;
+      window.clearTimeout(saveTimeout);
+    };
+  }, [answers, currentStep, documentType, selectedPathway, serverDraftReference]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!selectedPathway) return;
@@ -139,6 +247,11 @@ export function useRegistrationForm() {
     setSubmitResult(null);
     setErrorMessage("");
     setFieldErrors({});
+    setServerDraftReference("");
+    setPortalDraftLastSavedAt(null);
+    setDraftSaveStatus("waiting_for_mobile");
+    setDraftSaveMessage("Draft is saved on this device. Enter a mobile number to also save it to the portal.");
+    setCurrentStep(0);
 
     if (pathway.status !== "open") {
       setPathwayMessage(
@@ -162,19 +275,30 @@ export function useRegistrationForm() {
     setErrorMessage("");
     setFieldErrors({});
     setPathwayMessage("");
+    setServerDraftReference("");
+    setPortalDraftLastSavedAt(null);
+    setDraftSaveStatus("waiting_for_mobile");
+    setDraftSaveMessage("Draft is saved on this device. Enter a mobile number to also save it to the portal.");
+    setCurrentStep(0);
   }
 
   function handleAnswerChange(question, value) {
-    setAnswers((previousAnswers) => ({
-      ...previousAnswers,
-      [question.questionCode]: value,
-    }));
+    const dependentQuestionCodes = LOCATION_DEPENDENT_QUESTIONS[question.questionCode] || [];
+
+    setAnswers((previousAnswers) => {
+      const nextAnswers = {
+        ...previousAnswers,
+        [question.questionCode]: value,
+      };
+
+      clearDependentLocationAnswers(question.questionCode, nextAnswers);
+      return nextAnswers;
+    });
 
     setFieldErrors((previousErrors) => {
-      if (!previousErrors[question.questionCode]) return previousErrors;
-
       const updatedErrors = { ...previousErrors };
       delete updatedErrors[question.questionCode];
+      dependentQuestionCodes.forEach((questionCode) => delete updatedErrors[questionCode]);
       return updatedErrors;
     });
 
@@ -279,6 +403,9 @@ export function useRegistrationForm() {
       formData.append("pathway", selectedPathway.id);
       formData.append("registrationMode", selectedPathway.mode);
       formData.append("documentType", documentType);
+      if (serverDraftReference) {
+        formData.append("draftReference", serverDraftReference);
+      }
       formData.append("responses", JSON.stringify(buildResponsesPayload()));
 
       for (const file of documents) {
@@ -306,6 +433,11 @@ export function useRegistrationForm() {
       setDocuments([]);
       setFieldErrors({});
       clearDraft();
+      setServerDraftReference("");
+      setPortalDraftLastSavedAt(null);
+      setDraftSaveStatus("submitted");
+      setDraftSaveMessage("Application submitted. Draft closed.");
+      setCurrentStep(0);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       console.error(error);
@@ -325,6 +457,11 @@ export function useRegistrationForm() {
         setDocuments([]);
         setFieldErrors({});
         clearDraft();
+        setServerDraftReference("");
+        setPortalDraftLastSavedAt(null);
+        setDraftSaveStatus("submitted");
+        setDraftSaveMessage("Application submitted. Draft closed.");
+        setCurrentStep(0);
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
@@ -362,6 +499,11 @@ export function useRegistrationForm() {
     setAnswers({});
     setDocuments([]);
     setDocumentType("DISABILITY_DOCUMENT");
+    setServerDraftReference("");
+    setPortalDraftLastSavedAt(null);
+    setDraftSaveStatus("waiting_for_mobile");
+    setDraftSaveMessage("Draft cleared from this device. Enter a mobile number to save a new draft to the portal.");
+    setCurrentStep(0);
     setFieldErrors({});
     setErrorMessage("");
   }
@@ -379,7 +521,13 @@ export function useRegistrationForm() {
     fieldErrors,
     pathwayMessage,
     formProgress,
-    draftLastSavedAt,
+    draftLastSavedAt: portalDraftLastSavedAt || draftLastSavedAt,
+    localDraftLastSavedAt: draftLastSavedAt,
+    portalDraftLastSavedAt,
+    draftReference: serverDraftReference,
+    draftSaveStatus,
+    draftSaveMessage,
+    currentStep,
     handlePathwaySelect,
     handleBackToPathways,
     handleAnswerChange,
@@ -387,6 +535,7 @@ export function useRegistrationForm() {
     handleSubmit,
     handleValidateQuestions,
     handleClearDraft,
+    handleCurrentStepChange: setCurrentStep,
     setDocuments,
     setDocumentType,
   };

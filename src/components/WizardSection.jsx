@@ -4,12 +4,12 @@ const SECTION_META = {
   Location: {
     icon: "bi-geo-alt",
     caption: "Where you are applying from",
-    intro: "Tell us where you are based first. This also sets the correct country code for your phone number.",
+    intro: "",
   },
   "Personal Details": {
     icon: "bi-person-badge",
-    caption: "Your identity and contact details",
-    intro: "Provide the basic details we need to create one application record and contact you safely.",
+    caption: "Identity, contact, age and household details",
+    intro: "Provide your identity, contact, age and demographic details. Applicants must be 18 to 33 years old at the point of registration.",
   },
   "Training Commitment": {
     icon: "bi-calendar-check",
@@ -19,12 +19,12 @@ const SECTION_META = {
   "Age and Demographics": {
     icon: "bi-person-lines-fill",
     caption: "Age and household profile",
-    intro: "Select your year of birth so the system can estimate your age against the programme age requirement.",
+    intro: "Applicants must be 18 to 33 years old at the point of registration. If you know your birth year, only eligible years are shown; if you are not sure, enter your age at last birthday.",
   },
   "Education and Training": {
     icon: "bi-mortarboard",
-    caption: "Education background",
-    intro: "Tell us about your education and any training you are currently undertaking.",
+    caption: "Education background and training availability",
+    intro: "Confirm your availability for the expected training period, then tell us about your education and any training you are currently undertaking.",
   },
   "Disability and Support": {
     icon: "bi-universal-access-circle",
@@ -142,9 +142,11 @@ function WizardSection({
         className={`ss-wizard-section-panel ${isActive ? "show" : ""}`}
         hidden={!isActive}
       >
-        <div className="ss-wizard-section-intro">
-          <p>{sectionMeta.intro}</p>
-        </div>
+        {sectionMeta.intro && (
+          <div className="ss-wizard-section-intro">
+            <p>{sectionMeta.intro}</p>
+          </div>
+        )}
 
         <FormSection
           section={title}

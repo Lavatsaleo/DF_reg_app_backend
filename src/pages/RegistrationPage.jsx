@@ -15,6 +15,10 @@ function RegistrationPage({
   fieldErrors,
   formProgress,
   draftLastSavedAt,
+  draftReference,
+  draftSaveStatus,
+  draftSaveMessage,
+  currentStep,
   onBackToPathways,
   onCheckStatus,
   onTakeSkillsTest,
@@ -25,6 +29,7 @@ function RegistrationPage({
   onDocumentsChange,
   onDocumentTypeChange,
   onClearDraft,
+  onStepChange,
 }) {
   const sectionEntries = Object.entries(groupedQuestions);
 
@@ -94,6 +99,10 @@ function RegistrationPage({
               fieldErrors={fieldErrors}
               formProgress={formProgress}
               draftLastSavedAt={draftLastSavedAt}
+              draftReference={draftReference}
+              draftSaveStatus={draftSaveStatus}
+              draftSaveMessage={draftSaveMessage}
+              currentStep={currentStep}
               onAnswerChange={onAnswerChange}
               onMultiSelectChange={onMultiSelectChange}
               onSubmit={onSubmit}
@@ -101,6 +110,7 @@ function RegistrationPage({
               onDocumentsChange={onDocumentsChange}
               onDocumentTypeChange={onDocumentTypeChange}
               onClearDraft={onClearDraft}
+              onStepChange={onStepChange}
             />
           </div>
 

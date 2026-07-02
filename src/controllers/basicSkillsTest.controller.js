@@ -2,10 +2,14 @@ const prisma = require("../config/prisma");
 const {
   BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
   BASIC_SKILLS_TEST_VERSION,
-  basicSkillsTestQuestions,
-  getPublicBasicSkillsTestQuestions,
 } = require("../data/basicSkillsTestQuestions");
 const { hashToken } = require("../utils/tokenUtils");
+const {
+  calculateAttemptResult,
+  getOrCreateInProgressAttempt,
+  toPublicQuestion,
+  validateAttemptAnswers,
+} = require("../services/basicSkillsQuestionBank.service");
 const {
   createAndSendBasicSkillsTestInvitation,
 } = require("../services/basicSkillsTestInvitation.service");
@@ -21,6 +25,31 @@ const REVIEW_TERMINAL_STATUSES = [
 
 function normalizeReference(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function getAttemptInclude() {
+  return {
+    answers: {
+      orderBy: {
+        questionCode: "asc",
+      },
+    },
+    invitation: true,
+    selectedQuestions: {
+      orderBy: {
+        questionNumber: "asc",
+      },
+    },
+  };
+}
+
+function findSubmittedAttempt(applicant) {
+  if (!Array.isArray(applicant?.skillsTestAttempts)) return null;
+
+  return (
+    applicant.skillsTestAttempts.find((attempt) => attempt.status === "SUBMITTED") ||
+    null
+  );
 }
 
 function summarizeAttempt(attempt) {
@@ -39,7 +68,6 @@ function summarizeAttempt(attempt) {
     submittedAt: attempt.submittedAt,
     durationSeconds: attempt.durationSeconds,
     testVersion: attempt.testVersion || BASIC_SKILLS_TEST_VERSION,
-    answers: attempt.answers || undefined,
   };
 }
 
@@ -76,13 +104,14 @@ function getTestMetadata(questions) {
     title: "Basic IT Skills Test",
     instructions:
       "Answer each question once. The result will be attached to your registration record for committee review.",
-    totalQuestions: basicSkillsTestQuestions.length,
-    maxScore: basicSkillsTestQuestions.reduce(
+    totalQuestions: questions.length,
+    maxScore: questions.reduce(
       (sum, question) => sum + Number(question.points || 1),
       0
     ),
     passingPercentage: BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
     testVersion: BASIC_SKILLS_TEST_VERSION,
+    randomizationMode: "balanced-question-bank",
     questions,
   };
 }
@@ -115,17 +144,8 @@ async function findApplicantForSkillsTest(reference) {
     },
     include: {
       skillsTestAttempts: {
-        orderBy: {
-          submittedAt: "desc",
-        },
-        include: {
-          answers: {
-            orderBy: {
-              questionCode: "asc",
-            },
-          },
-          invitation: true,
-        },
+        orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
+        include: getAttemptInclude(),
       },
       skillsTestInvitations: {
         orderBy: {
@@ -148,17 +168,8 @@ async function findInvitationForToken(rawToken) {
       applicant: {
         include: {
           skillsTestAttempts: {
-            orderBy: {
-              submittedAt: "desc",
-            },
-            include: {
-              answers: {
-                orderBy: {
-                  questionCode: "asc",
-                },
-              },
-              invitation: true,
-            },
+            orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
+            include: getAttemptInclude(),
           },
         },
       },
@@ -176,17 +187,8 @@ async function markInvitationExpired(invitation) {
       applicant: {
         include: {
           skillsTestAttempts: {
-            orderBy: {
-              submittedAt: "desc",
-            },
-            include: {
-              answers: {
-                orderBy: {
-                  questionCode: "asc",
-                },
-              },
-              invitation: true,
-            },
+            orderBy: [{ submittedAt: "desc" }, { createdAt: "desc" }],
+            include: getAttemptInclude(),
           },
         },
       },
@@ -234,6 +236,39 @@ async function validateInvitationToken(rawToken) {
   };
 }
 
+async function prepareQuestionBankAttempt({ applicant, invitation = null }) {
+  const submittedAttempt = findSubmittedAttempt(applicant);
+
+  if (submittedAttempt) {
+    return {
+      alreadySubmitted: true,
+      test: getTestMetadata([]),
+      attempt: submittedAttempt,
+    };
+  }
+
+  const preparedAttempt = await getOrCreateInProgressAttempt({
+    applicantId: applicant.id,
+    invitationId: invitation?.id || null,
+  });
+
+  if (preparedAttempt.alreadySubmitted) {
+    return {
+      alreadySubmitted: true,
+      test: getTestMetadata([]),
+      attempt: preparedAttempt.attempt,
+    };
+  }
+
+  const publicQuestions = preparedAttempt.attempt.selectedQuestions.map(toPublicQuestion);
+
+  return {
+    alreadySubmitted: false,
+    test: getTestMetadata(publicQuestions),
+    attempt: preparedAttempt.attempt,
+  };
+}
+
 async function getBasicSkillsTestQuestions(req, res) {
   try {
     const reference = normalizeReference(req.params.reference);
@@ -255,16 +290,16 @@ async function getBasicSkillsTestQuestions(req, res) {
       });
     }
 
-    const previousAttempt = applicant.skillsTestAttempts[0] || null;
+    const preparedTest = await prepareQuestionBankAttempt({ applicant });
 
     return res.json({
       success: true,
-      alreadySubmitted: Boolean(previousAttempt),
+      alreadySubmitted: preparedTest.alreadySubmitted,
       accessMode: "reference",
       applicant: buildApplicantSummary(applicant),
       invitation: summarizeInvitation(applicant.skillsTestInvitations?.[0]),
-      test: getTestMetadata(previousAttempt ? [] : getPublicBasicSkillsTestQuestions()),
-      attempt: summarizeAttempt(previousAttempt),
+      test: preparedTest.alreadySubmitted ? getTestMetadata([]) : preparedTest.test,
+      attempt: preparedTest.alreadySubmitted ? summarizeAttempt(preparedTest.attempt) : null,
       message:
         "For production use, applicants should open the Basic IT skills test using the private email invitation link.",
     });
@@ -294,9 +329,9 @@ async function getInvitationBasicSkillsTestQuestions(req, res) {
 
     let invitation = tokenCheck.invitation;
     const applicant = tokenCheck.applicant;
-    const previousAttempt = applicant.skillsTestAttempts[0] || null;
+    const submittedAttempt = findSubmittedAttempt(applicant);
 
-    if (!previousAttempt && !invitation.openedAt && ["PENDING", "SENT", "EMAIL_FAILED"].includes(invitation.status)) {
+    if (!submittedAttempt && !invitation.openedAt && ["PENDING", "SENT", "EMAIL_FAILED"].includes(invitation.status)) {
       invitation = await prisma.basicSkillsTestInvitation.update({
         where: { id: invitation.id },
         data: {
@@ -306,14 +341,16 @@ async function getInvitationBasicSkillsTestQuestions(req, res) {
       });
     }
 
+    const preparedTest = await prepareQuestionBankAttempt({ applicant, invitation });
+
     return res.json({
       success: true,
-      alreadySubmitted: Boolean(previousAttempt),
+      alreadySubmitted: preparedTest.alreadySubmitted,
       accessMode: "invitation-token",
       applicant: buildApplicantSummary(applicant),
       invitation: summarizeInvitation(invitation),
-      test: getTestMetadata(previousAttempt ? [] : getPublicBasicSkillsTestQuestions()),
-      attempt: summarizeAttempt(previousAttempt),
+      test: preparedTest.alreadySubmitted ? getTestMetadata([]) : preparedTest.test,
+      attempt: preparedTest.alreadySubmitted ? summarizeAttempt(preparedTest.attempt) : null,
     });
   } catch (error) {
     console.error("Get invitation basic skills test questions error:", error);
@@ -326,130 +363,79 @@ async function getInvitationBasicSkillsTestQuestions(req, res) {
   }
 }
 
-function normalizeSubmittedAnswers(rawAnswers) {
-  if (Array.isArray(rawAnswers)) return rawAnswers;
-
-  if (rawAnswers && typeof rawAnswers === "object") {
-    return Object.entries(rawAnswers).map(([questionCode, answer]) => ({
-      questionCode,
-      answer,
-    }));
-  }
-
-  return [];
-}
-
-function calculateResult(submittedAnswers) {
-  const answerLookup = new Map(
-    normalizeSubmittedAnswers(submittedAnswers).map((item) => [
-      item.questionCode,
-      String(item.answer || "").trim(),
-    ])
-  );
-
-  const maxScore = basicSkillsTestQuestions.reduce(
-    (sum, question) => sum + Number(question.points || 1),
-    0
-  );
-
-  const answerRecords = basicSkillsTestQuestions.map((question) => {
-    const selectedAnswer = answerLookup.get(question.questionCode) || "";
-    const isCorrect = selectedAnswer === question.correctAnswer;
-    const pointsPossible = Number(question.points || 1);
-    const pointsAwarded = isCorrect ? pointsPossible : 0;
-
-    return {
-      questionCode: question.questionCode,
-      questionText: question.questionText,
-      category: question.category,
-      selectedAnswer,
-      correctAnswer: question.correctAnswer,
-      isCorrect,
-      pointsAwarded,
-      pointsPossible,
-    };
+async function createSubmittedAttempt({ applicant, invitation, submittedAnswers, durationSeconds }) {
+  const preparedAttempt = await getOrCreateInProgressAttempt({
+    applicantId: applicant.id,
+    invitationId: invitation?.id || null,
   });
 
-  const score = answerRecords.reduce(
-    (sum, answer) => sum + answer.pointsAwarded,
-    0
-  );
-
-  const percentage = maxScore > 0 ? Math.round((score / maxScore) * 10000) / 100 : 0;
-  const passed = percentage >= BASIC_SKILLS_TEST_PASSING_PERCENTAGE;
-
-  return {
-    score,
-    maxScore,
-    percentage,
-    passed,
-    answerRecords,
-  };
-}
-
-function validateAllQuestionsAnswered(submittedAnswers) {
-  const answerLookup = new Map(
-    normalizeSubmittedAnswers(submittedAnswers).map((item) => [
-      item.questionCode,
-      String(item.answer || "").trim(),
-    ])
-  );
-
-  return basicSkillsTestQuestions
-    .filter((question) => !answerLookup.get(question.questionCode))
-    .map((question) => ({
-      questionCode: question.questionCode,
-      questionText: question.questionText,
-    }));
-}
-
-async function createSubmittedAttempt({ applicant, invitation, submittedAnswers, durationSeconds }) {
-  const previousAttempt = applicant.skillsTestAttempts[0] || null;
-
-  if (previousAttempt) {
+  if (preparedAttempt.alreadySubmitted) {
     return {
       duplicate: true,
-      attempt: previousAttempt,
+      attempt: preparedAttempt.attempt,
       nextStatus: applicant.status,
     };
   }
 
-  const result = calculateResult(submittedAnswers);
+  const attempt = preparedAttempt.attempt;
+  const selectedQuestions = attempt.selectedQuestions || [];
+  const validation = validateAttemptAnswers(selectedQuestions, submittedAnswers);
+
+  if (!validation.valid) {
+    return {
+      validationError: true,
+      missingAnswers: validation.missingAnswers,
+      unknownAnswers: validation.unknownAnswers,
+    };
+  }
+
+  const result = calculateAttemptResult(selectedQuestions, submittedAnswers);
+  const passed = result.percentage >= BASIC_SKILLS_TEST_PASSING_PERCENTAGE;
   const nextStatus = REVIEW_TERMINAL_STATUSES.includes(applicant.status)
     ? applicant.status
     : "SKILLS_TEST_COMPLETED_PENDING_REVIEW";
 
   const transactionResult = await prisma.$transaction(async (tx) => {
-    const attempt = await tx.basicSkillsTestAttempt.create({
+    const currentAttempt = await tx.basicSkillsTestAttempt.findUnique({
+      where: { id: attempt.id },
+      include: getAttemptInclude(),
+    });
+
+    if (!currentAttempt || currentAttempt.status === "SUBMITTED") {
+      return {
+        duplicate: true,
+        attempt: currentAttempt,
+        assignment: null,
+      };
+    }
+
+    await tx.basicSkillsTestAnswer.deleteMany({
+      where: { attemptId: attempt.id },
+    });
+
+    const updatedAttempt = await tx.basicSkillsTestAttempt.update({
+      where: { id: attempt.id },
       data: {
-        applicantId: applicant.id,
-        invitationId: invitation?.id || null,
-        attemptNumber: 1,
         status: "SUBMITTED",
         score: result.score,
         maxScore: result.maxScore,
         percentage: result.percentage,
-        passed: result.passed,
+        passed,
         passingPercentage: BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
         durationSeconds,
+        submittedAt: new Date(),
         testVersion: BASIC_SKILLS_TEST_VERSION,
         answers: {
           create: result.answerRecords,
         },
       },
-      include: {
-        answers: {
-          orderBy: {
-            questionCode: "asc",
-          },
-        },
-        invitation: true,
-      },
+      include: getAttemptInclude(),
     });
 
-    if (invitation) {
+    const invitationId = invitation?.id || updatedAttempt.invitationId;
+    if (invitationId) {
       await tx.basicSkillsTestInvitation.update({
-        where: { id: invitation.id },
+        where: { id: invitationId },
         data: {
           status: "USED",
           usedAt: new Date(),
@@ -481,8 +467,16 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
         })
       : null;
 
-    return { attempt, assignment };
+    return { attempt: updatedAttempt, assignment, duplicate: false };
   });
+
+  if (transactionResult.duplicate) {
+    return {
+      duplicate: true,
+      attempt: transactionResult.attempt,
+      nextStatus: applicant.status,
+    };
+  }
 
   return {
     duplicate: false,
@@ -507,16 +501,6 @@ async function submitBasicSkillsTest(req, res) {
       });
     }
 
-    const missingAnswers = validateAllQuestionsAnswered(submittedAnswers);
-
-    if (missingAnswers.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Please answer all Basic IT skills test questions before submitting.",
-        missingAnswers,
-      });
-    }
-
     const applicant = await findApplicantForSkillsTest(reference);
     const accessCheck = validateApplicantCanTakeTest(applicant);
 
@@ -533,6 +517,15 @@ async function submitBasicSkillsTest(req, res) {
       submittedAnswers,
       durationSeconds,
     });
+
+    if (result.validationError) {
+      return res.status(400).json({
+        success: false,
+        message: "Please answer all Basic IT skills test questions before submitting.",
+        missingAnswers: result.missingAnswers,
+        unknownAnswers: result.unknownAnswers,
+      });
+    }
 
     if (result.duplicate) {
       return res.status(409).json({
@@ -585,16 +578,6 @@ async function submitInvitationBasicSkillsTest(req, res) {
       ? Number(req.body.durationSeconds)
       : null;
 
-    const missingAnswers = validateAllQuestionsAnswered(submittedAnswers);
-
-    if (missingAnswers.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Please answer all Basic IT skills test questions before submitting.",
-        missingAnswers,
-      });
-    }
-
     const tokenCheck = await validateInvitationToken(token);
 
     if (!tokenCheck.allowed) {
@@ -611,6 +594,15 @@ async function submitInvitationBasicSkillsTest(req, res) {
       submittedAnswers,
       durationSeconds,
     });
+
+    if (result.validationError) {
+      return res.status(400).json({
+        success: false,
+        message: "Please answer all Basic IT skills test questions before submitting.",
+        missingAnswers: result.missingAnswers,
+        unknownAnswers: result.unknownAnswers,
+      });
+    }
 
     if (result.duplicate) {
       return res.status(409).json({
@@ -668,11 +660,12 @@ async function sendBasicSkillsTestInvitationForApplicant(req, res) {
       });
     }
 
-    if (applicant.skillsTestAttempts[0]) {
+    const submittedAttempt = findSubmittedAttempt(applicant);
+    if (submittedAttempt) {
       return res.status(409).json({
         success: false,
         message: "This applicant has already submitted the Basic IT skills test.",
-        attempt: summarizeAttempt(applicant.skillsTestAttempts[0]),
+        attempt: summarizeAttempt(submittedAttempt),
       });
     }
 

@@ -7,6 +7,7 @@ function isEmpty(value) {
   );
 }
 
+const MIN_ELIGIBLE_AGE = 18;
 const MAX_ELIGIBLE_AGE = 33;
 
 function normalizeQuestionText(question) {
@@ -72,6 +73,16 @@ function getEstimatedAgeFromYear(value) {
   if (!Number.isInteger(year)) return null;
 
   return new Date().getFullYear() - year;
+}
+
+function isEligibleAgeValue(value) {
+  const age = Number(value);
+  return Number.isInteger(age) && age >= MIN_ELIGIBLE_AGE && age <= MAX_ELIGIBLE_AGE;
+}
+
+function isEligibleYearOfBirth(value) {
+  const estimatedAge = getEstimatedAgeFromYear(value);
+  return estimatedAge !== null && estimatedAge >= MIN_ELIGIBLE_AGE && estimatedAge <= MAX_ELIGIBLE_AGE;
 }
 
 function isValidAge(value) {
@@ -140,11 +151,16 @@ export function validateAnswers({ questions, answers, isQuestionVisible }) {
       continue;
     }
 
+    if (question.validationType === "ELIGIBLE_YEAR_OF_BIRTH" && !isEligibleYearOfBirth(value)) {
+      errors[question.questionCode] = `Select a year of birth for applicants aged ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE}.`;
+      continue;
+    }
+
     if (question.questionCode === "YEAR_OF_BIRTH" && String(value).trim() !== "Not sure") {
       const estimatedAge = getEstimatedAgeFromYear(value);
 
-      if (estimatedAge !== null && estimatedAge > MAX_ELIGIBLE_AGE) {
-        errors[question.questionCode] = `Applicants above ${MAX_ELIGIBLE_AGE} years are not eligible for this pathway.`;
+      if (estimatedAge !== null && (estimatedAge < MIN_ELIGIBLE_AGE || estimatedAge > MAX_ELIGIBLE_AGE)) {
+        errors[question.questionCode] = `Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old for this pathway.`;
         continue;
       }
     }
@@ -195,8 +211,8 @@ export function validateAnswers({ questions, answers, isQuestionVisible }) {
         continue;
       }
 
-      if (question.questionCode === "APPROXIMATE_AGE" && Number(value) > MAX_ELIGIBLE_AGE) {
-        errors[question.questionCode] = `Applicants above ${MAX_ELIGIBLE_AGE} years are not eligible for this pathway.`;
+      if (question.validationType === "ELIGIBLE_AGE" && !isEligibleAgeValue(value)) {
+        errors[question.questionCode] = `Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old for this pathway.`;
         continue;
       }
 

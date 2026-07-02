@@ -80,6 +80,7 @@ enum SyncStatus {
 }
 
 enum BasicSkillsTestAttemptStatus {
+  IN_PROGRESS
   SUBMITTED
 }
 
@@ -136,6 +137,9 @@ model Applicant {
   town      String?
   county    String?
   subCounty String?
+  state     String?
+  region    String?
+  district  String?
 
   /*
     Demographic fields
@@ -251,6 +255,9 @@ model Applicant {
   @@index([country])
   @@index([county])
   @@index([subCounty])
+  @@index([state])
+  @@index([region])
+  @@index([district])
   @@index([pathway])
   @@index([registrationMode])
   @@index([isEligible])
@@ -424,17 +431,17 @@ model BasicSkillsTestAttempt {
   invitationId  String? @unique
 
   attemptNumber Int @default(1)
-  status        BasicSkillsTestAttemptStatus @default(SUBMITTED)
+  status        BasicSkillsTestAttemptStatus @default(IN_PROGRESS)
 
   score             Float   @default(0)
   maxScore          Float   @default(0)
   percentage        Float   @default(0)
   passed            Boolean @default(false)
-  passingPercentage Float   @default(50)
+  passingPercentage Float   @default(60)
 
-  submittedAt     DateTime @default(now())
+  submittedAt     DateTime?
   durationSeconds Int?
-  testVersion     String? @default("BASIC_IT_SKILLS_V1")
+  testVersion     String? @default("BASIC_IT_SKILLS_BANK_V1")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -442,11 +449,82 @@ model BasicSkillsTestAttempt {
   applicant  Applicant                  @relation(fields: [applicantId], references: [id], onDelete: Cascade)
   invitation BasicSkillsTestInvitation? @relation(fields: [invitationId], references: [id], onDelete: SetNull)
   answers    BasicSkillsTestAnswer[]
+  selectedQuestions BasicSkillsTestAttemptQuestion[]
 
   @@unique([applicantId, attemptNumber])
   @@index([applicantId])
+  @@index([status])
   @@index([passed])
   @@index([submittedAt])
+}
+
+
+model BasicSkillsTestQuestion {
+  id String @id @default(uuid())
+
+  questionCode String @unique
+  domain       String
+  competencyArea String?
+  difficulty   String?
+  questionText String @db.Text
+
+  optionA String @db.Text
+  optionB String @db.Text
+  optionC String @db.Text
+  optionD String @db.Text
+
+  correctOption String
+  correctAnswer String @db.Text
+  explanation   String? @db.Text
+
+  sourceFrameworks String? @db.Text
+  sourceUrl        String? @db.Text
+  adaptationNote   String? @db.Text
+  recommendedFor   String?
+
+  active      Boolean @default(true)
+  scoreWeight Float   @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  selectedInAttempts BasicSkillsTestAttemptQuestion[]
+
+  @@index([domain])
+  @@index([difficulty])
+  @@index([active])
+  @@index([recommendedFor])
+}
+
+model BasicSkillsTestAttemptQuestion {
+  id String @id @default(uuid())
+
+  attemptId  String
+  questionId String?
+
+  questionCode   String
+  questionNumber Int
+  domain         String?
+  category       String?
+  difficulty     String?
+  questionText   String @db.Text
+  options        Json
+
+  correctOption String
+  correctAnswer String @db.Text
+  pointsPossible Float  @default(1)
+
+  createdAt DateTime @default(now())
+
+  attempt  BasicSkillsTestAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question BasicSkillsTestQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@unique([attemptId, questionCode])
+  @@index([attemptId])
+  @@index([questionId])
+  @@index([questionCode])
+  @@index([domain])
+  @@index([category])
 }
 
 model BasicSkillsTestAnswer {

@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed:basic-skills": "node src/scripts/seedBasicSkillsQuestionBank.js"
   },
   "keywords": [
     "sightsavers",

@@ -1,6 +1,7 @@
 const prisma = require("../config/prisma");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
+const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
 const {
@@ -24,15 +25,6 @@ const PATHWAY_TITLES = {
   DIGITAL_ENTREPRENEURSHIP: "Digital Entrepreneurship",
 };
 
-const COUNTRY_DIAL_CODES = {
-  Kenya: "+254",
-  Nigeria: "+234",
-  Ghana: "+233",
-  Zambia: "+260",
-  Senegal: "+221",
-  Zimbabwe: "+263",
-  Tanzania: "+255",
-};
 
 function toBoolean(value) {
   if (value === true) return true;
@@ -1266,8 +1258,16 @@ async function submitRegistration(req, res) {
 
           country: getAnswerValue(parsedResponses, "COUNTRY"),
           town: getAnswerValue(parsedResponses, "TOWN"),
-          county: getAnswerValue(parsedResponses, "COUNTY"),
-          subCounty: getAnswerValue(parsedResponses, "SUB_COUNTY"),
+          county:
+            getAnswerValue(parsedResponses, "COUNTY") ||
+            getAnswerValue(parsedResponses, "STATE") ||
+            getAnswerValue(parsedResponses, "REGION"),
+          subCounty:
+            getAnswerValue(parsedResponses, "SUB_COUNTY") ||
+            getAnswerValue(parsedResponses, "DISTRICT"),
+          state: getAnswerValue(parsedResponses, "STATE"),
+          region: getAnswerValue(parsedResponses, "REGION"),
+          district: getAnswerValue(parsedResponses, "DISTRICT"),
 
           dateOfBirth: eligibilityResult.dateOfBirth,
 
@@ -1748,6 +1748,9 @@ async function getRegistrationStatus(req, res) {
         },
       },
       skillsTestAttempts: {
+        where: {
+          status: "SUBMITTED",
+        },
         orderBy: {
           submittedAt: "desc",
         },

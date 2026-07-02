@@ -6,11 +6,9 @@ const COUNTRY_DIAL_CODES = {
   Nigeria: "+234",
   Ghana: "+233",
   Zambia: "+260",
-  Senegal: "+221",
-  Zimbabwe: "+263",
-  Tanzania: "+255",
 };
 
+const MIN_ELIGIBLE_AGE = 18;
 const MAX_ELIGIBLE_AGE = 33;
 
 function getInputMode(question) {
@@ -67,6 +65,49 @@ function getCountryDialCode(answers) {
   return COUNTRY_DIAL_CODES[answers?.COUNTRY] || "";
 }
 
+function getQuestionOptions(question, answers) {
+  const metadata = question.metadata || {};
+  const country = answers?.COUNTRY;
+
+  if (metadata.optionsByCountry && country) {
+    const countryOptions = metadata.optionsByCountry[country];
+    if (Array.isArray(countryOptions)) return countryOptions;
+  }
+
+  if (metadata.optionsByCountryAndParent && country) {
+    const countryConfig = metadata.optionsByCountryAndParent[country];
+    const parentQuestionCode = countryConfig?.parentQuestionCode;
+    const parentAnswer = parentQuestionCode ? answers?.[parentQuestionCode] : null;
+    const parentOptions = countryConfig?.optionsByParent?.[parentAnswer];
+
+    if (Array.isArray(parentOptions)) return parentOptions;
+    return [];
+  }
+
+  if (metadata.optionsByParent) {
+    const parentQuestionCode = metadata.parentQuestionCode;
+    const parentAnswer = parentQuestionCode ? answers?.[parentQuestionCode] : null;
+    const parentOptions = metadata.optionsByParent[parentAnswer];
+
+    if (Array.isArray(parentOptions)) return parentOptions;
+    return [];
+  }
+
+  return Array.isArray(question.options) ? question.options : [];
+}
+
+function getSelectPlaceholder(question, options, answers) {
+  if (options.length > 0) return "Select one option";
+
+  const metadata = question.metadata || {};
+
+  if (metadata.emptyOptionLabel) return metadata.emptyOptionLabel;
+  if (metadata.optionsByCountry && !answers?.COUNTRY) return "Select country first";
+  if (metadata.optionsByParent || metadata.optionsByCountryAndParent) return "Select the previous option first";
+
+  return "Select one option";
+}
+
 function getEstimatedAgeFromYear(value) {
   const year = Number(value);
 
@@ -82,11 +123,11 @@ function renderYearOfBirthNote(question, safeValue) {
 
   if (age === null) return null;
 
-  const isOverAge = age > MAX_ELIGIBLE_AGE;
+  const isOutsideEligibleRange = age < MIN_ELIGIBLE_AGE || age > MAX_ELIGIBLE_AGE;
 
   return (
-    <p className={`ss-derived-age-note ${isOverAge ? "warning" : ""}`} aria-live="polite">
-      Estimated age: <strong>{age}</strong> years. {isOverAge ? `Applicants above ${MAX_ELIGIBLE_AGE} years are not eligible for this pathway.` : ""}
+    <p className={`ss-derived-age-note ${isOutsideEligibleRange ? "warning" : ""}`} aria-live="polite">
+      Estimated age: <strong>{age}</strong> years. {isOutsideEligibleRange ? `Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old for this pathway.` : ""}
     </p>
   );
 }
@@ -268,6 +309,8 @@ function QuestionField({
   }
 
   if (question.responseType === "SINGLE_SELECT") {
+    const options = getQuestionOptions(question, answers);
+
     return (
       <>
         <select
@@ -276,8 +319,8 @@ function QuestionField({
           value={safeValue}
           onChange={(event) => onAnswerChange(question, event.target.value)}
         >
-          <option value="">Select one option</option>
-          {(question.options || []).map((option) => (
+          <option value="">{getSelectPlaceholder(question, options, answers)}</option>
+          {options.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>

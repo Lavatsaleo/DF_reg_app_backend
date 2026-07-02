@@ -1,73 +1,12 @@
-const COUNTRIES = [
-  "Kenya",
-  "Nigeria",
-  "Ghana",
-  "Zambia",
-  "Senegal",
-  "Zimbabwe",
-  "Tanzania",
-  "Other",
-];
-
-const COUNTRY_DIAL_CODES = {
-  Kenya: "+254",
-  Nigeria: "+234",
-  Ghana: "+233",
-  Zambia: "+260",
-  Senegal: "+221",
-  Zimbabwe: "+263",
-  Tanzania: "+255",
-};
-
-const KENYA_COUNTIES = [
-  "Baringo",
-  "Bomet",
-  "Bungoma",
-  "Busia",
-  "Elgeyo Marakwet",
-  "Embu",
-  "Garissa",
-  "Homa Bay",
-  "Isiolo",
-  "Kajiado",
-  "Kakamega",
-  "Kericho",
-  "Kiambu",
-  "Kilifi",
-  "Kirinyaga",
-  "Kisii",
-  "Kisumu",
-  "Kitui",
-  "Kwale",
-  "Laikipia",
-  "Lamu",
-  "Machakos",
-  "Makueni",
-  "Mandera",
-  "Marsabit",
-  "Meru",
-  "Migori",
-  "Mombasa",
-  "Murang'a",
-  "Nairobi",
-  "Nakuru",
-  "Nandi",
-  "Narok",
-  "Nyamira",
-  "Nyandarua",
-  "Nyeri",
-  "Samburu",
-  "Siaya",
-  "Taita Taveta",
-  "Tana River",
-  "Tharaka Nithi",
-  "Trans Nzoia",
-  "Turkana",
-  "Uasin Gishu",
-  "Vihiga",
-  "Wajir",
-  "West Pokot",
-];
+const {
+  COUNTRIES,
+  COUNTRY_DIAL_CODES,
+  KENYA_COUNTIES,
+  GHANA_REGIONS,
+  STATE_OPTIONS_BY_COUNTRY,
+  DISTRICT_OPTIONS_BY_COUNTRY_AND_PARENT,
+  LOCATION_HIERARCHY,
+} = require("./administrativeLocations");
 
 const MIN_ELIGIBLE_AGE = Number(process.env.MIN_ELIGIBLE_AGE || 18);
 const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 33);
@@ -140,23 +79,13 @@ const registrationFormQuestions = [
     options: COUNTRIES,
     metadata: {
       dialCodes: COUNTRY_DIAL_CODES,
+      locationHierarchy: LOCATION_HIERARCHY,
     },
     showIf: null,
     helpText: "Select the country where you are applying for the Digital Futures programme.",
   },
   {
     questionNumber: 3,
-    questionCode: "TOWN",
-    questionText: "Town",
-    section: "Location",
-    responseType: "TEXT",
-    required: true,
-    isEligibilityQuestion: false,
-    options: [],
-    showIf: null,
-  },
-  {
-    questionNumber: 4,
     questionCode: "COUNTY",
     questionText: "County",
     section: "Location",
@@ -171,14 +100,19 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 5,
+    questionNumber: 4,
     questionCode: "SUB_COUNTY",
     questionText: "Sub-county",
     section: "Location",
-    responseType: "TEXT",
+    responseType: "SINGLE_SELECT",
     required: true,
     isEligibilityQuestion: false,
     options: [],
+    metadata: {
+      parentQuestionCode: "COUNTY",
+      optionsByParent: LOCATION_HIERARCHY.Kenya.children,
+      emptyOptionLabel: "Select county first",
+    },
     showIf: {
       questionCode: "COUNTRY",
       operator: "equals",
@@ -186,7 +120,71 @@ const registrationFormQuestions = [
     },
   },
   {
+    questionNumber: 5,
+    questionCode: "STATE",
+    questionText: "State",
+    section: "Location",
+    responseType: "SINGLE_SELECT",
+    required: true,
+    isEligibilityQuestion: false,
+    options: [],
+    metadata: {
+      optionsByCountry: STATE_OPTIONS_BY_COUNTRY,
+      labelByCountry: {
+        Zambia: "Province",
+      },
+      helpTextByCountry: {
+        Nigeria: "Select the state where you are applying for the Digital Futures programme.",
+        Zambia: "Select the province where you are applying for the Digital Futures programme.",
+      },
+    },
+    showIf: {
+      questionCode: "COUNTRY",
+      operator: "in",
+      value: ["Nigeria", "Zambia"],
+    },
+    helpText: "Select the state where you are applying for the Digital Futures programme.",
+  },
+  {
     questionNumber: 6,
+    questionCode: "REGION",
+    questionText: "Region",
+    section: "Location",
+    responseType: "SINGLE_SELECT",
+    required: true,
+    isEligibilityQuestion: false,
+    options: GHANA_REGIONS,
+    showIf: {
+      questionCode: "COUNTRY",
+      operator: "equals",
+      value: "Ghana",
+    },
+  },
+  {
+    questionNumber: 7,
+    questionCode: "DISTRICT",
+    questionText: "District",
+    section: "Location",
+    responseType: "SINGLE_SELECT",
+    required: true,
+    isEligibilityQuestion: false,
+    options: [],
+    metadata: {
+      optionsByCountryAndParent: DISTRICT_OPTIONS_BY_COUNTRY_AND_PARENT,
+      emptyOptionLabel: "Select the previous administrative level first",
+      emptyOptionLabelByCountry: {
+        Ghana: "Select region first",
+        Zambia: "Select province first",
+      },
+    },
+    showIf: {
+      questionCode: "COUNTRY",
+      operator: "in",
+      value: ["Ghana", "Zambia"],
+    },
+  },
+  {
+    questionNumber: 8,
     questionCode: "FIRST_NAME",
     questionText:
       "First name (as included in your official documents such as ID or your university certificate)",
@@ -199,7 +197,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 7,
+    questionNumber: 9,
     questionCode: "LAST_NAME",
     questionText:
       "Last name (as included in your official documents such as ID or your university certificate)",
@@ -212,7 +210,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 8,
+    questionNumber: 10,
     questionCode: "NATIONAL_ID_NUMBER",
     questionText:
       "What is your National ID number? You will be required to upload a copy of your ID to this application.",
@@ -225,7 +223,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 9,
+    questionNumber: 11,
     questionCode: "CONTACT_NUMBER",
     questionText: "Contact number",
     section: "Personal Details",
@@ -239,7 +237,7 @@ const registrationFormQuestions = [
       "Enter numbers only. The country code is added using the country selected above.",
   },
   {
-    questionNumber: 10,
+    questionNumber: 12,
     questionCode: "EMAIL",
     questionText: "Email address",
     section: "Personal Details",
@@ -251,7 +249,7 @@ const registrationFormQuestions = [
     helpText: "Eligible applicants receive the Basic IT skills test link through this email address.",
   },
   {
-    questionNumber: 11,
+    questionNumber: 13,
     questionCode: "ALTERNATIVE_CONTACT_NUMBER",
     questionText: "Alternative contact number",
     section: "Personal Details",
@@ -264,7 +262,7 @@ const registrationFormQuestions = [
     helpText: "Optional. Enter numbers only.",
   },
   {
-    questionNumber: 12,
+    questionNumber: 14,
     questionCode: "TRAINING_AVAILABILITY",
     questionText: "Are you available for the full period of training?",
     section: "Education and Training",
@@ -277,7 +275,7 @@ const registrationFormQuestions = [
       "Training dates, venue and frequency will be confirmed by the project team. Physical Academy training is expected to be face-to-face and may run Monday to Friday over several months.",
   },
   {
-    questionNumber: 13,
+    questionNumber: 15,
     questionCode: "BIRTH_YEAR_KNOWN",
     questionText: "Are you sure about the year you were born?",
     section: "Personal Details",
@@ -290,7 +288,7 @@ const registrationFormQuestions = [
       "Choose Yes if you know your correct year of birth. Choose No if you are not sure and enter your age at last birthday.",
   },
   {
-    questionNumber: 14,
+    questionNumber: 16,
     questionCode: "YEAR_OF_BIRTH",
     questionText: "What year were you born?",
     section: "Personal Details",
@@ -309,10 +307,10 @@ const registrationFormQuestions = [
       value: "Yes",
     },
     helpText:
-      "Only years of birth that fall within the eligible age range are shown. Applicants must be 18 to 33 years old at the point of registration.",
+      `Only years of birth that fall within the eligible age range are shown. Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old at the point of registration.`,
   },
   {
-    questionNumber: 15,
+    questionNumber: 17,
     questionCode: "APPROXIMATE_AGE",
     questionText: "If unsure, what age were you at your last birthday?",
     section: "Personal Details",
@@ -326,10 +324,10 @@ const registrationFormQuestions = [
       operator: "equals",
       value: "No",
     },
-    helpText: "Applicants must be 18 to 33 years old at the point of registration.",
+    helpText: `Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old at the point of registration.`,
   },
   {
-    questionNumber: 16,
+    questionNumber: 18,
     questionCode: "SEX",
     questionText: "What is your sex?",
     section: "Personal Details",
@@ -340,7 +338,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 17,
+    questionNumber: 19,
     questionCode: "HOUSEHOLD_SIZE",
     questionText: "How many family members do you live with?",
     section: "Personal Details",
@@ -354,7 +352,7 @@ const registrationFormQuestions = [
       "This helps the project report on reach using household or immediate family size.",
   },
   {
-    questionNumber: 18,
+    questionNumber: 20,
     questionCode: "EDUCATION_LEVEL",
     questionText:
       "What is the highest level of education/schooling you have completed? You will be required to provide your academic certificate or transcript.",
@@ -376,7 +374,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 19,
+    questionNumber: 21,
     questionCode: "EDUCATION_LEVEL_OTHER",
     questionText: "If other, please specify your highest level of education/schooling.",
     section: "Education and Training",
@@ -391,7 +389,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 20,
+    questionNumber: 22,
     questionCode: "COURSE_STUDIED",
     questionText:
       "What course did you study in the university/polytechnic/college of education/vocational school? Please state the full qualification title as it appears on your academic certificate or transcript, for example BA in History.",
@@ -407,7 +405,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 21,
+    questionNumber: 23,
     questionCode: "CURRENT_EDUCATION_STATUS",
     questionText: "Are you currently enrolled in an education or training programme?",
     section: "Education and Training",
@@ -418,7 +416,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 22,
+    questionNumber: 24,
     questionCode: "CURRENT_EDUCATION_PROGRAMME",
     questionText: "If Yes, which programme or training?",
     section: "Education and Training",
@@ -433,7 +431,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 23,
+    questionNumber: 25,
     questionCode: "HAS_DISABILITY",
     questionText: "Do you consider yourself to have a disability?",
     section: "Disability and Support",
@@ -444,7 +442,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 24,
+    questionNumber: 26,
     questionCode: "DISABILITY_TYPE",
     questionText:
       "Sightsavers aims to ensure that diverse people with disabilities are represented in our programmes. Please state your disability type. You can choose multiple.",
@@ -473,7 +471,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 25,
+    questionNumber: 27,
     questionCode: "OTHER_DISABILITY_TYPE",
     questionText: "If other, please specify your disability type.",
     section: "Disability and Support",
@@ -488,7 +486,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 26,
+    questionNumber: 28,
     questionCode: "HAS_ACCESSIBILITY_REQUIREMENTS",
     questionText: "Do you have any accessibility requirements for which you require additional support?",
     section: "Disability and Support",
@@ -501,7 +499,7 @@ const registrationFormQuestions = [
       "This question does not inform selection; it helps the programme understand support needs.",
   },
   {
-    questionNumber: 27,
+    questionNumber: 29,
     questionCode: "ACCESSIBILITY_NEEDS",
     questionText:
       "Please select the accessibility support you require. You can choose multiple.",
@@ -531,7 +529,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 28,
+    questionNumber: 30,
     questionCode: "ACCESSIBILITY_NEEDS_OTHER",
     questionText: "If other, please specify your accessibility requirement.",
     section: "Disability and Support",
@@ -546,7 +544,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 29,
+    questionNumber: 31,
     questionCode: "CAN_PARTICIPATE_ONLINE",
     questionText: "This training will be held online. Will you be able to participate?",
     section: "Digital Access",
@@ -561,7 +559,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 30,
+    questionNumber: 32,
     questionCode: "HAS_DEVICE_ACCESS",
     questionText:
       "Do you have access to a computer, tablet or smart phone (Android or iOS) for you to learn online?",
@@ -577,7 +575,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 31,
+    questionNumber: 33,
     questionCode: "HEARD_ABOUT_PROJECT",
     questionText: "How did you hear about the project?",
     section: "Application",
@@ -588,7 +586,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 32,
+    questionNumber: 34,
     questionCode: "HEARD_ABOUT_PROJECT_OTHER",
     questionText: "If other, please specify how you heard about the project.",
     section: "Application",
@@ -603,7 +601,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 33,
+    questionNumber: 35,
     questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING",
     questionText:
       "Please select whether you have previously undertaken training with Sightsavers. You can select multiple.",
@@ -625,7 +623,7 @@ const registrationFormQuestions = [
       "If you select 'I have not undertaken training with Sightsavers before' together with another option, the project team may clarify this during review.",
   },
   {
-    questionNumber: 34,
+    questionNumber: 36,
     questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING_OTHER",
     questionText: "If other, please specify the previous Sightsavers training.",
     section: "Application",
@@ -640,7 +638,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 35,
+    questionNumber: 37,
     questionCode: "CAREER_GOALS",
     questionText:
       "Please tell us about your career goals and how undertaking this training will help you reach them.",
@@ -652,7 +650,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 36,
+    questionNumber: 38,
     questionCode: "MOTIVATION",
     questionText:
       "Why do you want to be a part of this training? You may write about skills you want to learn, problems you want to solve, opportunities you are hoping for, etc.",
@@ -664,7 +662,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 37,
+    questionNumber: 39,
     questionCode: "DIGITAL_SKILLS_LEVEL",
     questionText:
       "How would you describe your current IT/digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or Google Docs.",
@@ -681,7 +679,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 38,
+    questionNumber: 40,
     questionCode: "EMPLOYMENT_STATUS",
     questionText: "What is your current employment status?",
     section: "Employment Status and Career Goals",
@@ -700,7 +698,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 39,
+    questionNumber: 41,
     questionCode: "EMPLOYMENT_STATUS_OTHER",
     questionText: "If other, please specify your employment status.",
     section: "Employment Status and Career Goals",
@@ -715,7 +713,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 40,
+    questionNumber: 42,
     questionCode: "JOB_SEARCH_ACTIONS",
     questionText: "If looking for employment or self-employment, in the last four weeks, have you done any of the following? You can select multiple.",
     section: "Employment Status and Career Goals",
@@ -740,7 +738,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 41,
+    questionNumber: 43,
     questionCode: "MONTHLY_INCOME_LOCAL_CURRENCY",
     questionText:
       "What is your average monthly income from your work? Please write the amount in your local currency.",
@@ -757,7 +755,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 42,
+    questionNumber: 44,
     questionCode: "FAMILY_RESPECTS_WORK",
     questionText: "Does your family think your work is honest and respected?",
     section: "Employment Status and Career Goals",
@@ -772,7 +770,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 43,
+    questionNumber: 45,
     questionCode: "WORKPLACE_RESPECT",
     questionText: "Are you treated with respect at your workplace?",
     section: "Employment Status and Career Goals",
@@ -787,7 +785,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 44,
+    questionNumber: 46,
     questionCode: "TREATED_SAME_AS_COWORKERS",
     questionText: "Are you treated the same as your co-workers at your workplace?",
     section: "Employment Status and Career Goals",
@@ -802,7 +800,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 45,
+    questionNumber: 47,
     questionCode: "WORK_MAKES_PROUD",
     questionText: "Does your work make you feel proud?",
     section: "Employment Status and Career Goals",
@@ -817,7 +815,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 46,
+    questionNumber: 48,
     questionCode: "WORK_GIVES_PURPOSE",
     questionText: "Does your work give you a purpose?",
     section: "Employment Status and Career Goals",
@@ -832,7 +830,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 47,
+    questionNumber: 49,
     questionCode: "CAREER_ASPIRATIONS",
     questionText: "Which statement best describes your career aspirations?",
     section: "Employment Status and Career Goals",
@@ -847,7 +845,7 @@ const registrationFormQuestions = [
     showIf: null,
   },
   {
-    questionNumber: 48,
+    questionNumber: 50,
     questionCode: "BUSINESS_START_DATE",
     questionText:
       "If you want to grow your current business, when did you start your business? This can be when it was registered or when you started trading.",
@@ -863,7 +861,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 49,
+    questionNumber: 51,
     questionCode: "CURRENT_EMPLOYEES",
     questionText: "How many employees do you have currently?",
     section: "Employment Status and Career Goals",
@@ -878,7 +876,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 50,
+    questionNumber: 52,
     questionCode: "PREFERRED_SECTOR",
     questionText: "If looking to get paid job, or start a business, which sector would you like to work in?",
     section: "Employment Status and Career Goals",
@@ -893,7 +891,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 51,
+    questionNumber: 53,
     questionCode: "PREFERRED_SECTOR_OTHER",
     questionText: "If other, please specify the sector you would like to work in.",
     section: "Employment Status and Career Goals",
@@ -908,7 +906,7 @@ const registrationFormQuestions = [
     },
   },
   {
-    questionNumber: 52,
+    questionNumber: 54,
     questionCode: "REGISTRATION_CONSENT",
     questionText:
       "I consent to the use of my information for registration, review, and project follow-up purposes.",
