@@ -9,6 +9,16 @@ const {
 } = require("../services/committeeAssignment.service");
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
 const { hashPassword } = require("../utils/passwordUtils");
+const {
+  COUNTRIES,
+  normalizeCountry,
+  isSuperAdmin,
+  getUserCountry,
+  getApplicantCountryFilter,
+  getCommitteeMemberCountryFilter,
+  canAccessCountry,
+  resolveCountryForManagedRecord,
+} = require("../utils/countryAccess");
 
 const REVIEW_DECISION_LABELS = {
   SELECTED: "Selected",
@@ -77,6 +87,7 @@ function summarizeLinkedStaffUser(user) {
     role: user.role,
     isActive: user.isActive,
     authProvider: user.authProvider || "LOCAL",
+    country: user.country || user.committeeMember?.country || null,
     lastLoginAt: user.lastLoginAt,
   };
 }
@@ -93,6 +104,7 @@ function summarizeMember(member, workload = {}) {
     fullName: member.fullName,
     email: member.email,
     phone: member.phone,
+    country: member.country,
     role: member.role,
     isActive: member.isActive,
     notes: member.notes,
@@ -193,9 +205,13 @@ function summarizeAssignment(assignment) {
   };
 }
 
-async function getWorkloadByMemberId() {
+async function getWorkloadByMemberId(user) {
+  const country = isSuperAdmin(user) ? null : getUserCountry(user);
+  const where = country ? { applicant: { country } } : {};
+
   const grouped = await prisma.committeeAssignment.groupBy({
     by: ["committeeMemberId", "status"],
+    where,
     _count: {
       status: true,
     },
@@ -254,15 +270,22 @@ function getAssignmentInclude() {
 async function listCommitteeMembers(req, res) {
   try {
     const includeInactive = String(req.query.includeInactive || "false") === "true";
-    const workloadMap = await getWorkloadByMemberId();
+    const memberCountryFilter = getCommitteeMemberCountryFilter(req.user);
+    const where = {
+      ...memberCountryFilter,
+      ...(includeInactive ? {} : { isActive: true }),
+    };
+    const workloadMap = await getWorkloadByMemberId(req.user);
     const members = await prisma.committeeMember.findMany({
-      where: includeInactive ? {} : { isActive: true },
-      orderBy: [{ role: "asc" }, { fullName: "asc" }],
+      where,
+      orderBy: [{ country: "asc" }, { role: "asc" }, { fullName: "asc" }],
       include: { staffUsers: true },
     });
 
     return res.json({
       success: true,
+      countries: COUNTRIES,
+      currentUserCountry: getUserCountry(req.user),
       members: members.map((member) => summarizeMember(member, workloadMap.get(member.id))),
     });
   } catch (error) {
@@ -282,11 +305,26 @@ async function createCommitteeMember(req, res) {
     const phone = toSafeString(req.body.phone);
     const role = normalizeCommitteeRole(req.body.role);
     const notes = toSafeString(req.body.notes) || null;
+    const country = resolveCountryForManagedRecord(req.user, req.body.country);
 
     if (!fullName || !email) {
       return res.status(400).json({
         success: false,
         message: "Committee member name and email are required.",
+      });
+    }
+
+    if (!country) {
+      return res.status(400).json({
+        success: false,
+        message: "Country is required when adding a committee member.",
+      });
+    }
+
+    if (!canAccessCountry(req.user, country)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only add committee members for your assigned country.",
       });
     }
 
@@ -306,6 +344,7 @@ async function createCommitteeMember(req, res) {
           fullName,
           email,
           phone: phone || null,
+          country,
           role,
           isActive: req.body.isActive === undefined ? true : Boolean(req.body.isActive),
           notes,
@@ -320,6 +359,7 @@ async function createCommitteeMember(req, res) {
             email,
             passwordHash: hashPassword(temporaryPassword),
             role: role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER",
+            country,
             committeeMemberId: member.id,
             isActive: true,
           },
@@ -341,6 +381,7 @@ async function createCommitteeMember(req, res) {
             fullName: result.staffUser.fullName,
             email: result.staffUser.email,
             role: result.staffUser.role,
+            country: result.staffUser.country,
             isActive: result.staffUser.isActive,
           }
         : null,
@@ -387,6 +428,12 @@ async function createCommitteeMemberLogin(req, res) {
         throw err;
       }
 
+      if (!canAccessCountry(req.user, member.country)) {
+        const err = new Error("You can only manage committee logins for your assigned country.");
+        err.statusCode = 403;
+        throw err;
+      }
+
       const role = member.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
       const existingLinkedUser = member.staffUsers.find((user) => user.isActive);
 
@@ -397,6 +444,7 @@ async function createCommitteeMemberLogin(req, res) {
             fullName: member.fullName,
             email: member.email,
             role,
+            country: member.country || null,
             passwordHash: hashPassword(temporaryPassword),
             authProvider: "LOCAL",
             isActive: true,
@@ -419,6 +467,7 @@ async function createCommitteeMemberLogin(req, res) {
           data: {
             fullName: member.fullName,
             role,
+            country: member.country || null,
             committeeMemberId: member.id,
             passwordHash: hashPassword(temporaryPassword),
             authProvider: "LOCAL",
@@ -438,6 +487,7 @@ async function createCommitteeMemberLogin(req, res) {
           email: member.email,
           passwordHash: hashPassword(temporaryPassword),
           role,
+          country: member.country || null,
           committeeMemberId: member.id,
           authProvider: "LOCAL",
           isActive: true,
@@ -469,6 +519,25 @@ async function createCommitteeMemberLogin(req, res) {
 async function updateCommitteeMember(req, res) {
   try {
     const memberId = req.params.memberId;
+    const existingMember = await prisma.committeeMember.findUnique({
+      where: { id: memberId },
+      include: { staffUsers: true },
+    });
+
+    if (!existingMember) {
+      return res.status(404).json({
+        success: false,
+        message: "Committee member not found.",
+      });
+    }
+
+    if (!canAccessCountry(req.user, existingMember.country)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only update committee members for your assigned country.",
+      });
+    }
+
     const data = {};
 
     if (req.body.fullName !== undefined) data.fullName = toSafeString(req.body.fullName);
@@ -478,6 +547,14 @@ async function updateCommitteeMember(req, res) {
     if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
     if (req.body.notes !== undefined) data.notes = toSafeString(req.body.notes) || null;
 
+    if (req.body.country !== undefined) {
+      if (!isSuperAdmin(req.user)) {
+        data.country = getUserCountry(req.user);
+      } else {
+        data.country = normalizeCountry(req.body.country) || null;
+      }
+    }
+
     if (data.fullName === "" || data.email === "") {
       return res.status(400).json({
         success: false,
@@ -485,9 +562,33 @@ async function updateCommitteeMember(req, res) {
       });
     }
 
-    const member = await prisma.committeeMember.update({
-      where: { id: memberId },
-      data,
+    if (data.country === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Country cannot be blank for a committee member.",
+      });
+    }
+
+    const member = await prisma.$transaction(async (tx) => {
+      const updatedMember = await tx.committeeMember.update({
+        where: { id: memberId },
+        data,
+        include: { staffUsers: true },
+      });
+
+      const linkedRole = updatedMember.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
+      if (updatedMember.staffUsers?.length) {
+        await tx.staffUser.updateMany({
+          where: { committeeMemberId: updatedMember.id },
+          data: {
+            fullName: updatedMember.fullName,
+            role: linkedRole,
+            country: updatedMember.country || null,
+          },
+        });
+      }
+
+      return updatedMember;
     });
 
     return res.json({
@@ -522,20 +623,34 @@ async function updateCommitteeMember(req, res) {
 
 async function getCommitteeOverview(req, res) {
   try {
+    const applicantCountryFilter = getApplicantCountryFilter(req.user);
+    const memberCountryFilter = getCommitteeMemberCountryFilter(req.user);
+    const assignmentWhere = Object.keys(applicantCountryFilter).length
+      ? { applicant: applicantCountryFilter }
+      : {};
+
     const [members, readyCount, unassignedReadyCount, assignmentCounts] = await Promise.all([
       prisma.committeeMember.findMany({
-        orderBy: [{ role: "asc" }, { fullName: "asc" }],
+        where: memberCountryFilter,
+        orderBy: [{ country: "asc" }, { role: "asc" }, { fullName: "asc" }],
         include: { staffUsers: true },
       }),
-      prisma.applicant.count({ where: { status: READY_FOR_COMMITTEE_STATUS } }),
       prisma.applicant.count({
         where: {
+          ...applicantCountryFilter,
+          status: READY_FOR_COMMITTEE_STATUS,
+        },
+      }),
+      prisma.applicant.count({
+        where: {
+          ...applicantCountryFilter,
           status: READY_FOR_COMMITTEE_STATUS,
           committeeAssignments: { none: {} },
         },
       }),
       prisma.committeeAssignment.groupBy({
         by: ["status"],
+        where: assignmentWhere,
         _count: { status: true },
       }),
     ]);
@@ -545,10 +660,12 @@ async function getCommitteeOverview(req, res) {
       return acc;
     }, {});
 
-    const workloadMap = await getWorkloadByMemberId();
+    const workloadMap = await getWorkloadByMemberId(req.user);
 
     return res.json({
       success: true,
+      countries: COUNTRIES,
+      currentUserCountry: getUserCountry(req.user),
       overview: {
         activeMembers: members.filter((member) => member.isActive).length,
         allMembers: members.length,
@@ -578,14 +695,23 @@ async function listCommitteeAssignments(req, res) {
     const status = req.query.status ? normalizeAssignmentStatus(req.query.status) : null;
     const memberId = toSafeString(req.query.memberId);
     const search = toSafeString(req.query.search).toLowerCase();
+    const applicantCountryFilter = getApplicantCountryFilter(req.user);
 
     const where = {};
     if (status) where.status = status;
+    if (Object.keys(applicantCountryFilter).length) where.applicant = applicantCountryFilter;
 
     if (isCommitteeMemberUser(req)) {
       if (!requireLinkedCommitteeMember(req, res)) return null;
       where.committeeMemberId = getUserCommitteeMemberId(req);
     } else if (memberId) {
+      const member = await prisma.committeeMember.findUnique({ where: { id: memberId } });
+      if (!member || !canAccessCountry(req.user, member.country)) {
+        return res.status(403).json({
+          success: false,
+          message: "You can only filter by committee members from your assigned country.",
+        });
+      }
       where.committeeMemberId = memberId;
     }
 
@@ -606,6 +732,7 @@ async function listCommitteeAssignments(req, res) {
             applicant.participantCode,
             applicant.contactNumber,
             applicant.email,
+            applicant.country,
             assignment.committeeMember?.fullName,
           ]
             .filter(Boolean)
@@ -631,8 +758,10 @@ async function listCommitteeAssignments(req, res) {
 
 async function listUnassignedReadyApplicants(req, res) {
   try {
+    const applicantCountryFilter = getApplicantCountryFilter(req.user);
     const applicants = await prisma.applicant.findMany({
       where: {
+        ...applicantCountryFilter,
         status: READY_FOR_COMMITTEE_STATUS,
         committeeAssignments: { none: {} },
       },
@@ -662,14 +791,23 @@ async function listUnassignedReadyApplicants(req, res) {
 
 async function autoAssignReadyApplicants(req, res) {
   try {
-    const results = await assignReadyApplicants();
+    const country = isSuperAdmin(req.user) ? null : getUserCountry(req.user);
+
+    if (req.user?.role === "COUNTRY_ADMIN" && !country) {
+      return res.status(403).json({
+        success: false,
+        message: "Your country admin account is not assigned to a country.",
+      });
+    }
+
+    const results = await assignReadyApplicants({ country });
     const assigned = results.filter((result) => result.assigned).length;
 
     return res.status(201).json({
       success: true,
       message: assigned > 0
-        ? `${assigned} applicant${assigned === 1 ? "" : "s"} assigned to committee members.`
-        : "No applicants were assigned. Confirm there are active committee members and unassigned applicants ready for review.",
+        ? `${assigned} applicant${assigned === 1 ? "" : "s"} assigned to committee members${country ? ` in ${country}` : ""}.`
+        : `No applicants were assigned. Confirm there are active committee members${country ? ` in ${country}` : ""} and unassigned applicants ready for review.`,
       assigned,
       totalChecked: results.length,
       results: results.map((result) => ({
@@ -691,6 +829,22 @@ async function autoAssignReadyApplicants(req, res) {
 async function assignSingleApplicant(req, res) {
   try {
     const applicantId = req.params.applicantId;
+    const applicant = await prisma.applicant.findUnique({ where: { id: applicantId } });
+
+    if (!applicant) {
+      return res.status(404).json({
+        success: false,
+        message: "Applicant not found.",
+      });
+    }
+
+    if (!canAccessCountry(req.user, applicant.country)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only assign applicants from your assigned country.",
+      });
+    }
+
     const assignment = await assignApplicantToLeastLoadedMember({
       applicantId,
       assignedByType: "SYSTEM",
@@ -700,7 +854,7 @@ async function assignSingleApplicant(req, res) {
     if (!assignment) {
       return res.status(409).json({
         success: false,
-        message: "No active committee member is available for assignment.",
+        message: `No active committee member is available for ${applicant.country || "this applicant's country"}.`,
       });
     }
 
@@ -745,9 +899,29 @@ async function reassignApplicant(req, res) {
         throw err;
       }
 
+      if (!canAccessCountry(req.user, assignment.applicant?.country)) {
+        const err = new Error("You can only reassign applicants from your assigned country.");
+        err.statusCode = 403;
+        throw err;
+      }
+
       const newMember = await tx.committeeMember.findUnique({ where: { id: toCommitteeMemberId } });
       if (!newMember || !newMember.isActive) {
         const err = new Error("Selected committee member is not active or does not exist.");
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (!canAccessCountry(req.user, newMember.country)) {
+        const err = new Error("You can only reassign to committee members from your assigned country.");
+        err.statusCode = 403;
+        throw err;
+      }
+
+      const applicantCountry = normalizeCountry(assignment.applicant?.country);
+      const memberCountry = normalizeCountry(newMember.country);
+      if (applicantCountry && memberCountry && applicantCountry !== memberCountry) {
+        const err = new Error("Applicants can only be assigned to committee members from the same country.");
         err.statusCode = 400;
         throw err;
       }
@@ -815,12 +989,20 @@ async function startReview(req, res) {
 
     const existingAssignment = await prisma.committeeAssignment.findUnique({
       where: { id: assignmentId },
+      include: { applicant: true },
     });
 
     if (!existingAssignment) {
       return res.status(404).json({
         success: false,
         message: "Committee assignment not found.",
+      });
+    }
+
+    if (!canAccessCountry(req.user, existingAssignment.applicant?.country)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only review applicants from your assigned country.",
       });
     }
 
@@ -881,6 +1063,12 @@ async function submitCommitteeReview(req, res) {
       if (!assignment) {
         const err = new Error("Committee assignment not found.");
         err.statusCode = 404;
+        throw err;
+      }
+
+      if (!canAccessCountry(req.user, assignment.applicant?.country)) {
+        const err = new Error("You can only submit decisions for applicants from your assigned country.");
+        err.statusCode = 403;
         throw err;
       }
 

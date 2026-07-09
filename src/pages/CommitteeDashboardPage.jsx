@@ -5,14 +5,24 @@ import { API_BASE_URL } from "../config/api";
 import { formatPathwayLabel, formatStatusLabel } from "../utils/displayLabels";
 import "./CommitteeDashboardPage.css";
 
+const COUNTRY_OPTIONS = ["Kenya", "Nigeria", "Ghana", "Zambia"];
+
 const EMPTY_MEMBER_FORM = {
   fullName: "",
   email: "",
   phone: "",
+  country: "",
   role: "MEMBER",
   notes: "",
   createLogin: false,
   temporaryPassword: "",
+};
+
+const EMPTY_COUNTRY_ADMIN_FORM = {
+  fullName: "",
+  email: "",
+  country: "",
+  password: "",
 };
 
 const REVIEW_DECISIONS = [
@@ -87,6 +97,11 @@ function MemberWorkloadCard({ member, canManage, onToggleActive, onCreateLogin, 
             <span className={`committee-role-pill ${member.role === "CHAIRPERSON" ? "chair" : "member"}`}>
               {member.role === "CHAIRPERSON" ? "Chairperson" : "Member"}
             </span>
+            {member.country && (
+              <span className="committee-login-pill profile-only">
+                {member.country}
+              </span>
+            )}
             <span className={`committee-login-pill ${hasLogin ? "active" : "profile-only"}`}>
               {hasLogin ? "Login enabled" : "Profile only"}
             </span>
@@ -149,7 +164,80 @@ function MemberWorkloadCard({ member, canManage, onToggleActive, onCreateLogin, 
   );
 }
 
-function AddMemberForm({ memberForm, onChange, onSubmit, submitting }) {
+function AddCountryAdminForm({ adminForm, onChange, onSubmit, submitting, countries, countryAdmins }) {
+  return (
+    <form className="committee-add-member-card" onSubmit={onSubmit}>
+      <div>
+        <span className="ss-small-label dark">Country administration</span>
+        <h3>Add country admin</h3>
+        <p>Country admins can add and manage committee members only for their assigned country.</p>
+      </div>
+
+      <div className="committee-form-grid">
+        <label>
+          Full name
+          <input
+            type="text"
+            value={adminForm.fullName}
+            onChange={(event) => onChange("fullName", event.target.value)}
+            placeholder="e.g. Country programme admin"
+            required
+          />
+        </label>
+        <label>
+          Email address
+          <input
+            type="email"
+            value={adminForm.email}
+            onChange={(event) => onChange("email", event.target.value)}
+            placeholder="admin@example.org"
+            required
+          />
+        </label>
+        <label>
+          Country
+          <select
+            value={adminForm.country}
+            onChange={(event) => onChange("country", event.target.value)}
+            required
+          >
+            <option value="">Select country</option>
+            {(countries || COUNTRY_OPTIONS).map((country) => (
+              <option key={country} value={country}>{country}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Temporary password
+          <input
+            type="password"
+            minLength="8"
+            value={adminForm.password}
+            onChange={(event) => onChange("password", event.target.value)}
+            placeholder="Minimum 8 characters"
+            required
+          />
+        </label>
+      </div>
+
+      {countryAdmins?.length > 0 && (
+        <div className="committee-workload-row" aria-label="Country admins already set up">
+          {countryAdmins.map((admin) => (
+            <span key={admin.id}><strong>{admin.country || "No country"}</strong> {admin.fullName}</span>
+          ))}
+        </div>
+      )}
+
+      <div className="committee-form-actions">
+        <button type="submit" className="btn committee-primary-action" disabled={submitting}>
+          <i className="bi bi-person-gear" aria-hidden="true" /> {submitting ? "Adding..." : "Add country admin"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AddMemberForm({ memberForm, onChange, onSubmit, submitting, countries, canChooseCountry, currentUserCountry }) {
   return (
     <form className="committee-add-member-card" onSubmit={onSubmit}>
       <div>
@@ -187,6 +275,23 @@ function AddMemberForm({ memberForm, onChange, onSubmit, submitting }) {
             onChange={(event) => onChange("phone", event.target.value)}
             placeholder="Optional"
           />
+        </label>
+        <label>
+          Country
+          <select
+            value={canChooseCountry ? memberForm.country : currentUserCountry || memberForm.country}
+            onChange={(event) => onChange("country", event.target.value)}
+            disabled={!canChooseCountry}
+            required
+          >
+            <option value="">Select country</option>
+            {(countries || COUNTRY_OPTIONS).map((country) => (
+              <option key={country} value={country}>{country}</option>
+            ))}
+          </select>
+          {!canChooseCountry && currentUserCountry && (
+            <small>New members will be created under {currentUserCountry}.</small>
+          )}
         </label>
         <label>
           Role
@@ -533,6 +638,8 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
   const [unassignedApplicants, setUnassignedApplicants] = useState([]);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
   const [memberForm, setMemberForm] = useState(EMPTY_MEMBER_FORM);
+  const [countryAdminForm, setCountryAdminForm] = useState(EMPTY_COUNTRY_ADMIN_FORM);
+  const [countryAdmins, setCountryAdmins] = useState([]);
   const [filterMemberId, setFilterMemberId] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -540,6 +647,7 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [addingMember, setAddingMember] = useState(false);
+  const [addingCountryAdmin, setAddingCountryAdmin] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [assigningApplicantId, setAssigningApplicantId] = useState("");
   const [reassigning, setReassigning] = useState(false);
@@ -547,8 +655,11 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
   const [creatingLoginForMemberId, setCreatingLoginForMemberId] = useState("");
 
   const userRole = staffUser?.role || "";
-  const canManageCommittee = ["ADMIN", "COMMITTEE_CHAIRPERSON"].includes(userRole);
-  const canViewUnassignedApplicants = ["ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"].includes(userRole);
+  const isSuperAdmin = userRole === "ADMIN";
+  const currentUserCountry = overview?.currentUserCountry || staffUser?.country || "";
+  const countries = overview?.countries || COUNTRY_OPTIONS;
+  const canManageCommittee = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"].includes(userRole);
+  const canViewUnassignedApplicants = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"].includes(userRole);
   const canReassignApplicants = canManageCommittee;
 
   const selectedAssignmentFromList = useMemo(() => {
@@ -587,11 +698,22 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
       }
 
       const [overviewResponse, assignmentsResponse, unassignedResponse] = await Promise.all(requests);
+      let staffUsers = [];
 
-      setOverview(overviewResponse.data?.overview || null);
+      if (isSuperAdmin) {
+        const staffUsersResponse = await axios.get(`${API_BASE_URL}/api/auth/users`);
+        staffUsers = staffUsersResponse.data?.users || [];
+      }
+
+      setOverview({
+        ...(overviewResponse.data?.overview || {}),
+        countries: overviewResponse.data?.countries || COUNTRY_OPTIONS,
+        currentUserCountry: overviewResponse.data?.currentUserCountry || "",
+      });
       setMembers(overviewResponse.data?.members || []);
       setAssignments(assignmentsResponse.data?.assignments || []);
       setUnassignedApplicants(canViewUnassignedApplicants ? (unassignedResponse?.data?.applicants || []) : []);
+      setCountryAdmins(staffUsers.filter((user) => user.role === "COUNTRY_ADMIN"));
     } catch (loadError) {
       handleApiError(loadError, "Failed to load committee dashboard data.");
     } finally {
@@ -604,6 +726,33 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!isSuperAdmin && currentUserCountry && memberForm.country !== currentUserCountry) {
+      setMemberForm((current) => ({ ...current, country: currentUserCountry }));
+    }
+  }, [currentUserCountry, isSuperAdmin, memberForm.country]);
+
+  async function handleAddCountryAdmin(event) {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    setAddingCountryAdmin(true);
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/auth/users`, {
+        ...countryAdminForm,
+        role: "COUNTRY_ADMIN",
+      });
+      setMessage(response.data?.message || "Country admin added.");
+      setCountryAdminForm(EMPTY_COUNTRY_ADMIN_FORM);
+      await loadCommitteeData();
+    } catch (submitError) {
+      handleApiError(submitError, "Failed to add country admin.");
+    } finally {
+      setAddingCountryAdmin(false);
+    }
+  }
+
   async function handleAddMember(event) {
     event.preventDefault();
     setMessage("");
@@ -611,9 +760,13 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
     setAddingMember(true);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/committee/members`, memberForm);
+      const payload = {
+        ...memberForm,
+        country: isSuperAdmin ? memberForm.country : currentUserCountry,
+      };
+      const response = await axios.post(`${API_BASE_URL}/api/committee/members`, payload);
       setMessage(response.data?.message || "Committee member added.");
-      setMemberForm(EMPTY_MEMBER_FORM);
+      setMemberForm(isSuperAdmin ? EMPTY_MEMBER_FORM : { ...EMPTY_MEMBER_FORM, country: currentUserCountry });
       await loadCommitteeData();
     } catch (submitError) {
       handleApiError(submitError, "Failed to add committee member.");
@@ -755,7 +908,7 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
         <div className="committee-hero-card">
           <span>Signed in as</span>
           <strong>{staffUser?.fullName || "Staff user"}</strong>
-          <p>{String(userRole || "STAFF").replace(/_/g, " ").toLowerCase()}</p>
+          <p>{String(userRole || "STAFF").replace(/_/g, " ").toLowerCase()}{currentUserCountry ? ` · ${currentUserCountry}` : ""}</p>
           <button type="button" className="btn committee-secondary-action" onClick={onStaffLogout}>
             <i className="bi bi-box-arrow-right" aria-hidden="true" /> Sign out
           </button>
@@ -776,7 +929,7 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
         <div className="committee-action-bar">
           <div>
             <h2>Chairperson oversight</h2>
-            <p>Use automatic assignment to distribute new applicants to the active member with the lightest workload.</p>
+            <p>Use automatic assignment to distribute new applicants to the active member with the lightest workload within the same country.</p>
           </div>
           <div className="d-flex flex-wrap gap-2">
             <button type="button" className="btn committee-secondary-action" onClick={loadCommitteeData} disabled={loading}>
@@ -809,12 +962,26 @@ function CommitteeDashboardPage({ staffUser, onBackHome, onStaffLogout, onSessio
 
         <div className="committee-layout">
           <div className="committee-management-grid">
+            {isSuperAdmin && (
+              <AddCountryAdminForm
+                adminForm={countryAdminForm}
+                onChange={(field, value) => setCountryAdminForm((current) => ({ ...current, [field]: value }))}
+                onSubmit={handleAddCountryAdmin}
+                submitting={addingCountryAdmin}
+                countries={countries}
+                countryAdmins={countryAdmins}
+              />
+            )}
+
             {canManageCommittee && (
               <AddMemberForm
                 memberForm={memberForm}
                 onChange={(field, value) => setMemberForm((current) => ({ ...current, [field]: value }))}
                 onSubmit={handleAddMember}
                 submitting={addingMember}
+                countries={countries}
+                canChooseCountry={isSuperAdmin}
+                currentUserCountry={currentUserCountry}
               />
             )}
 

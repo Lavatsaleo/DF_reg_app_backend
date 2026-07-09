@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const { normalizeCountry } = require("../utils/countryAccess");
 
 const READY_FOR_COMMITTEE_STATUS = "SKILLS_TEST_COMPLETED_PENDING_REVIEW";
 const PENDING_ASSIGNMENT_STATUSES = ["ASSIGNED", "IN_REVIEW"];
@@ -18,11 +19,17 @@ function normalizeAssignmentStatus(value) {
   return allowed.includes(status) ? status : "ASSIGNED";
 }
 
-async function getActiveReviewMembers(db = prisma) {
+function getCountryWhere(country) {
+  const normalizedCountry = normalizeCountry(country);
+  return normalizedCountry ? { country: normalizedCountry } : {};
+}
+
+async function getActiveReviewMembers(db = prisma, country = null) {
   return db.committeeMember.findMany({
     where: {
       isActive: true,
       role: "MEMBER",
+      ...getCountryWhere(country),
     },
     orderBy: [
       { createdAt: "asc" },
@@ -50,8 +57,8 @@ async function buildWorkloadMap(db, memberIds) {
   );
 }
 
-async function selectLeastLoadedMember(db = prisma) {
-  const members = await getActiveReviewMembers(db);
+async function selectLeastLoadedMember(db = prisma, country = null) {
+  const members = await getActiveReviewMembers(db, country);
   if (!members.length) return null;
 
   const workloadMap = await buildWorkloadMap(
@@ -85,12 +92,19 @@ async function assignApplicantToLeastLoadedMember({
 
   const existingAssignment = await db.committeeAssignment.findUnique({
     where: { applicantId },
-    include: { committeeMember: true },
+    include: { committeeMember: true, applicant: true },
   });
 
   if (existingAssignment) return existingAssignment;
 
-  const member = await selectLeastLoadedMember(db);
+  const applicant = await db.applicant.findUnique({
+    where: { id: applicantId },
+  });
+
+  if (!applicant) return null;
+
+  const applicantCountry = normalizeCountry(applicant.country);
+  const member = await selectLeastLoadedMember(db, applicantCountry);
   if (!member) return null;
 
   const assignment = await db.committeeAssignment.create({
@@ -120,11 +134,13 @@ async function assignApplicantToLeastLoadedMember({
   return assignment;
 }
 
-async function assignReadyApplicants({ tx } = {}) {
+async function assignReadyApplicants({ tx, country = null } = {}) {
   const db = getDbClient(tx);
+  const countryWhere = getCountryWhere(country);
 
   const applicants = await db.applicant.findMany({
     where: {
+      ...countryWhere,
       status: READY_FOR_COMMITTEE_STATUS,
       committeeAssignments: {
         none: {},

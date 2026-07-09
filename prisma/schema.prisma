@@ -96,6 +96,7 @@ enum BasicSkillsTestInvitationStatus {
 
 enum StaffRole {
   ADMIN
+  COUNTRY_ADMIN
   COMMITTEE_CHAIRPERSON
   COMMITTEE_MEMBER
   VIEWER
@@ -557,6 +558,7 @@ model CommitteeMember {
   fullName String
   email    String @unique
   phone    String?
+  country  String?
   role     String @default("MEMBER")
   isActive Boolean @default(true)
   notes    String? @db.Text
@@ -572,6 +574,7 @@ model CommitteeMember {
   assignmentHistoryTo   CommitteeAssignmentHistory[] @relation("AssignmentToMember")
   staffUsers StaffUser[]
 
+  @@index([country])
   @@index([role])
   @@index([isActive])
   @@index([createdAt])
@@ -674,6 +677,7 @@ model StaffUser {
   lastPasswordResetAt DateTime?
 
   committeeMemberId String?
+  country String?
   lastLoginAt DateTime?
   tokenVersion Int @default(0)
 
@@ -683,6 +687,7 @@ model StaffUser {
   committeeMember CommitteeMember? @relation(fields: [committeeMemberId], references: [id], onDelete: SetNull)
   passwordResetTokens PasswordResetToken[]
 
+  @@index([country])
   @@index([role])
   @@index([isActive])
   @@index([authProvider])

@@ -23,11 +23,11 @@ router.get("/drafts/:draftReference", getRegistrationDraft);
 
 router.post("/", upload.array("documents", 10), submitRegistration);
 
-router.get("/", requireAuth, requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicants);
+router.get("/", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicants);
 
 // Must come before /:id so Express does not treat "status" as an applicant id.
 router.get("/status/:reference", getRegistrationStatus);
 
-router.get("/:id", requireAuth, requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicantById);
+router.get("/:id", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicantById);
 
 module.exports = router;

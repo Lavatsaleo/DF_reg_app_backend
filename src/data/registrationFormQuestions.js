@@ -171,8 +171,15 @@ const registrationFormQuestions = [
     options: [],
     metadata: {
       optionsByCountryAndParent: DISTRICT_OPTIONS_BY_COUNTRY_AND_PARENT,
+      labelByCountry: {
+        Nigeria: "LGA",
+      },
+      helpTextByCountry: {
+        Nigeria: "Select the Local Government Area (LGA) for your state.",
+      },
       emptyOptionLabel: "Select the previous administrative level first",
       emptyOptionLabelByCountry: {
+        Nigeria: "Select state first",
         Ghana: "Select region first",
         Zambia: "Select province first",
       },
@@ -180,7 +187,7 @@ const registrationFormQuestions = [
     showIf: {
       questionCode: "COUNTRY",
       operator: "in",
-      value: ["Ghana", "Zambia"],
+      value: ["Nigeria", "Ghana", "Zambia"],
     },
   },
   {

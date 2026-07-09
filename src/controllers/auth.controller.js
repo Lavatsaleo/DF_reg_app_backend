@@ -4,8 +4,9 @@ const { generateSecureToken, hashToken } = require("../utils/tokenUtils");
 const { hashPassword, verifyPassword } = require("../utils/passwordUtils");
 const { normalizeEmail } = require("../utils/normalizers");
 const { sendEmail } = require("../services/email.service");
+const { normalizeCountry, getUserCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
 
-const ALLOWED_ROLES = ["ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER", "VIEWER"];
+const ALLOWED_ROLES = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER", "VIEWER"];
 
 function toSafeString(value) {
   return String(value || "").trim();
@@ -69,6 +70,7 @@ function summarizeUser(user) {
     isActive: user.isActive,
     authProvider: user.authProvider || "LOCAL",
     committeeMemberId: user.committeeMemberId,
+    country: getUserCountry(user),
     committeeMember: user.committeeMember
       ? {
           id: user.committeeMember.id,
@@ -194,6 +196,7 @@ async function bootstrapAdmin(req, res) {
         passwordHash: hashPassword(password),
         role: "ADMIN",
         authProvider: "LOCAL",
+        country: normalizeCountry(req.body.country || process.env.BOOTSTRAP_ADMIN_COUNTRY) || null,
         isActive: true,
       },
     });
@@ -535,6 +538,7 @@ async function ssoCallback(req, res) {
           email,
           passwordHash: hashPassword(generateSecureToken()),
           role: normalizeSsoRole(process.env.SSO_DEFAULT_ROLE || "VIEWER"),
+          country: normalizeCountry(process.env.SSO_DEFAULT_COUNTRY) || null,
           authProvider: "SSO",
           externalSubject: subject,
           isActive: true,
@@ -572,6 +576,7 @@ async function ssoCallback(req, res) {
 async function listStaffUsers(req, res) {
   try {
     const users = await prisma.staffUser.findMany({
+      where: getApplicantCountryFilter(req.user),
       orderBy: [{ role: "asc" }, { fullName: "asc" }],
       include: { committeeMember: true },
     });
@@ -597,6 +602,7 @@ async function createStaffUser(req, res) {
     const password = toSafeString(req.body.password);
     const role = normalizeStaffRole(req.body.role);
     const committeeMemberId = toSafeString(req.body.committeeMemberId) || null;
+    let country = normalizeCountry(req.body.country);
 
     if (!fullName || !email || !password || password.length < 8) {
       return res.status(400).json({
@@ -620,6 +626,15 @@ async function createStaffUser(req, res) {
           message: "Selected committee member profile was not found.",
         });
       }
+
+      country = normalizeCountry(member.country || country);
+    }
+
+    if (role === "COUNTRY_ADMIN" && !country) {
+      return res.status(400).json({
+        success: false,
+        message: "Country is required when creating a country admin.",
+      });
     }
 
     const user = await prisma.staffUser.create({
@@ -630,6 +645,7 @@ async function createStaffUser(req, res) {
         role,
         authProvider: "LOCAL",
         committeeMemberId,
+        country: country || null,
         isActive: req.body.isActive === undefined ? true : Boolean(req.body.isActive),
       },
       include: { committeeMember: true },
@@ -666,6 +682,7 @@ async function updateStaffUser(req, res) {
     if (req.body.fullName !== undefined) data.fullName = toSafeString(req.body.fullName);
     if (req.body.email !== undefined) data.email = normalizeEmail(req.body.email);
     if (req.body.role !== undefined) data.role = normalizeStaffRole(req.body.role);
+    if (req.body.country !== undefined) data.country = normalizeCountry(req.body.country) || null;
     if (req.body.isActive !== undefined) data.isActive = Boolean(req.body.isActive);
     if (req.body.committeeMemberId !== undefined) data.committeeMemberId = toSafeString(req.body.committeeMemberId) || null;
     if (req.body.password) {
@@ -686,6 +703,13 @@ async function updateStaffUser(req, res) {
       return res.status(400).json({
         success: false,
         message: "Full name and email cannot be blank.",
+      });
+    }
+
+    if (data.role === "COUNTRY_ADMIN" && data.country === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Country is required for a country admin.",
       });
     }
 

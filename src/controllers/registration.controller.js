@@ -4,6 +4,7 @@ const registrationFormQuestions = require("../data/registrationFormQuestions");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
+const { getApplicantCountryFilter, canAccessCountry } = require("../utils/countryAccess");
 const {
   generateParticipantCode,
   generateApplicationReference,
@@ -1599,6 +1600,7 @@ async function submitRegistration(req, res) {
 async function getApplicants(req, res) {
   try {
     const applicants = await prisma.applicant.findMany({
+      where: getApplicantCountryFilter(req.user),
       orderBy: {
         createdAt: "desc",
       },
@@ -1682,6 +1684,12 @@ async function getApplicantById(req, res) {
     if (!applicant) {
       return res.status(404).json({
         message: "Applicant not found.",
+      });
+    }
+
+    if (!canAccessCountry(req.user, applicant.country)) {
+      return res.status(403).json({
+        message: "You can only view applicants from your assigned country.",
       });
     }
 
