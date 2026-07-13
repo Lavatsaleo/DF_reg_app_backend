@@ -366,7 +366,7 @@ const registrationFormQuestions = [
     section: "Education and Training",
     responseType: "SINGLE_SELECT",
     required: true,
-    isEligibilityQuestion: false,
+    isEligibilityQuestion: true,
     options: [
       "No Education",
       "Pre-Primary",
@@ -379,6 +379,8 @@ const registrationFormQuestions = [
       "Other",
     ],
     showIf: null,
+    helpText:
+      "Physical Academy applicants must have completed at least a Bachelor’s degree. Select First Degree or Post Graduate if applicable.",
   },
   {
     questionNumber: 21,
@@ -752,7 +754,6 @@ const registrationFormQuestions = [
     section: "Employment Status and Career Goals",
     responseType: "NUMBER",
     required: true,
-    validationType: "NON_NEGATIVE_NUMBER",
     isEligibilityQuestion: false,
     options: [],
     showIf: {

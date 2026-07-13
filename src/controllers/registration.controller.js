@@ -54,7 +54,10 @@ function normalizeRegistrationMode(value) {
 function normalizePathway(value) {
   if (!value) return "UNKNOWN";
 
-  const normalized = String(value).trim().toUpperCase();
+  const normalized = String(value)
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
 
   return ALLOWED_PATHWAYS.includes(normalized) ? normalized : "UNKNOWN";
 }
@@ -507,12 +510,23 @@ async function findIncompleteDraftByIdentifier(identifier) {
   return null;
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FORM_V4_AGE_18_33";
+const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FORM_V5_PHYSICAL_BACHELOR";
 const REGISTRATION_FORM_VERSION = "3.1";
 const MIN_ELIGIBLE_AGE = Number(process.env.MIN_ELIGIBLE_AGE || 18);
 const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 33);
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
+
+const PHYSICAL_ACADEMY_BACHELOR_OR_HIGHER_LEVELS = new Set([
+  "first degree",
+  "post graduate",
+  "postgraduate",
+  "bachelor",
+  "bachelor degree",
+  "bachelor's degree",
+  "bachelors degree",
+  "undergraduate degree",
+]);
 
 const PUBLIC_ELIGIBILITY_FEEDBACK = {
   UNDER_AGE: () =>
@@ -537,6 +551,8 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     "Because you indicated that you are not formally registered as a person with disability, the supporting information will be reviewed later by the committee.",
   DISABILITY_STATUS_CONFLICT: () =>
     "The disability answers provided appear to conflict, so the project team needs to review the application before the next step.",
+  PHYSICAL_ACADEMY_BACHELOR_REQUIRED: () =>
+    "The Physical Academy pathway is currently open only to applicants who have completed at least a Bachelor’s degree.",
 };
 
 function buildPublicEligibilityFeedback(reasonCodes = []) {
@@ -686,6 +702,34 @@ function hasPreviousSightsaversTraining(responses = []) {
   return selectedTraining.length > 0;
 }
 
+function hasBachelorDegreeOrHigher(responses = []) {
+  const educationLevel = normalizeText(getAnswerValue(responses, "EDUCATION_LEVEL"));
+  const otherEducationLevel = normalizeText(getAnswerValue(responses, "EDUCATION_LEVEL_OTHER"));
+
+  if (PHYSICAL_ACADEMY_BACHELOR_OR_HIGHER_LEVELS.has(educationLevel)) {
+    return true;
+  }
+
+  if (educationLevel.includes("bachelor") || educationLevel.includes("first degree")) {
+    return true;
+  }
+
+  if (educationLevel.includes("postgraduate") || educationLevel.includes("post graduate")) {
+    return true;
+  }
+
+  if (educationLevel === "other") {
+    return (
+      otherEducationLevel.includes("bachelor") ||
+      otherEducationLevel.includes("first degree") ||
+      otherEducationLevel.includes("postgraduate") ||
+      otherEducationLevel.includes("post graduate")
+    );
+  }
+
+  return false;
+}
+
 function buildDignifiedWorkResponse(responses = []) {
   const fields = [
     ["FAMILY_RESPECTS_WORK", "Does your family think your work is honest and respected?"],
@@ -740,11 +784,15 @@ function validateSubmissionConsent(responses = []) {
   return { valid: true };
 }
 
-function calculateEligibility(responses = [], applicationDate = new Date()) {
+function calculateEligibility(responses = [], applicationDate = new Date(), pathway = "UNKNOWN") {
   const reasonCodes = [];
   const criterionResults = {};
   const ageEvidence = getAgeEvidence(responses, applicationDate);
   const disabilityEvidence = getDisabilityEvidence(responses);
+  const normalizedPathway = normalizePathway(pathway || getAnswerValue(responses, "COURSE_APPLIED_FOR"));
+  const educationLevel = getAnswerValue(responses, "EDUCATION_LEVEL");
+  const physicalAcademyRequiresBachelor = normalizedPathway === "PHYSICAL_ACADEMY";
+  const hasRequiredPhysicalAcademyEducation = !physicalAcademyRequiresBachelor || hasBachelorDegreeOrHigher(responses);
 
   criterionResults.age = {
     source: ageEvidence.source,
@@ -784,10 +832,21 @@ function calculateEligibility(responses = [], applicationDate = new Date()) {
     reasonCodes.push("DISABILITY_STATUS_UNCONFIRMED");
   }
 
+  criterionResults.education = {
+    pathway: normalizedPathway,
+    educationLevel,
+    requiresBachelorDegreeOrHigher: physicalAcademyRequiresBachelor,
+    passed: hasRequiredPhysicalAcademyEducation,
+  };
+
+  if (!hasRequiredPhysicalAcademyEducation) {
+    reasonCodes.push("PHYSICAL_ACADEMY_BACHELOR_REQUIRED");
+  }
+
   // Initial eligibility only decides whether the applicant can proceed to the
   // Basic IT Skills Test. Document and disability registration evidence is
   // reviewed later by the committee together with the test result.
-  const blockingReasonCodes = ["UNDER_AGE", "OVER_AGE", "NO_DISABILITY"];
+  const blockingReasonCodes = ["UNDER_AGE", "OVER_AGE", "NO_DISABILITY", "PHYSICAL_ACADEMY_BACHELOR_REQUIRED"];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
@@ -1222,13 +1281,13 @@ async function submitRegistration(req, res) {
       });
     }
 
-    const eligibilityResult = calculateEligibility(parsedResponses);
-
     const registrationMode = normalizeRegistrationMode(
       req.body.registrationMode
     );
 
     const pathway = normalizePathway(req.body.pathway);
+
+    const eligibilityResult = calculateEligibility(parsedResponses, new Date(), pathway);
 
     const finalStatus =
       eligibilityResult.screeningStatus === "ELIGIBLE"

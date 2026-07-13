@@ -24,7 +24,7 @@ const SECTION_META = {
   "Education and Training": {
     icon: "bi-mortarboard",
     caption: "Education background and training availability",
-    intro: "Confirm your availability for the expected training period, then tell us about your education and any training you are currently undertaking.",
+    intro: "Confirm your availability for the expected training period, then tell us about your education and any training you are currently undertaking. For the Physical Academy pathway, applicants must have completed at least a Bachelor’s degree.",
   },
   "Disability and Support": {
     icon: "bi-universal-access-circle",

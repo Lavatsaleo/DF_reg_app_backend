@@ -10,6 +10,7 @@ export const pathways = [
       "Join structured in-person academy sessions designed to build practical digital skills, workplace readiness, and career confidence.",
     highlights: [
       "Face-to-face training",
+      "Bachelor’s degree required",
       "Practical classroom support",
       "Peer learning and mentorship",
     ],
