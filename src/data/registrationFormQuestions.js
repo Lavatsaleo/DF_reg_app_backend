@@ -275,11 +275,11 @@ const registrationFormQuestions = [
     section: "Education and Training",
     responseType: "BOOLEAN",
     required: true,
-    isEligibilityQuestion: false,
+    isEligibilityQuestion: true,
     options: ["Yes", "No"],
     showIf: null,
     helpText:
-      "Training dates, venue and frequency will be confirmed by the project team. Physical Academy training is expected to be face-to-face and may run Monday to Friday over several months.",
+      "Training dates, venue and frequency will be confirmed by the project team. Physical Academy training is expected to be face-to-face and may run Monday to Friday over several months. Applicants who are not available for the full training period are not eligible for the Physical Academy pathway.",
   },
   {
     questionNumber: 15,

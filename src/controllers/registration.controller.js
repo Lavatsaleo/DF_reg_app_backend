@@ -553,6 +553,8 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     "The disability answers provided appear to conflict, so the project team needs to review the application before the next step.",
   PHYSICAL_ACADEMY_BACHELOR_REQUIRED: () =>
     "The Physical Academy pathway is currently open only to applicants who have completed at least a Bachelor’s degree.",
+  PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED: () =>
+    "The Physical Academy pathway requires applicants to be available for the full training period.",
 };
 
 function buildPublicEligibilityFeedback(reasonCodes = []) {
@@ -791,8 +793,12 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   const disabilityEvidence = getDisabilityEvidence(responses);
   const normalizedPathway = normalizePathway(pathway || getAnswerValue(responses, "COURSE_APPLIED_FOR"));
   const educationLevel = getAnswerValue(responses, "EDUCATION_LEVEL");
+  const trainingAvailability = toBoolean(getAnswerValue(responses, "TRAINING_AVAILABILITY"));
   const physicalAcademyRequiresBachelor = normalizedPathway === "PHYSICAL_ACADEMY";
   const hasRequiredPhysicalAcademyEducation = !physicalAcademyRequiresBachelor || hasBachelorDegreeOrHigher(responses);
+  const physicalAcademyRequiresTrainingAvailability = normalizedPathway === "PHYSICAL_ACADEMY";
+  const hasRequiredPhysicalAcademyTrainingAvailability =
+    !physicalAcademyRequiresTrainingAvailability || trainingAvailability === true;
 
   criterionResults.age = {
     source: ageEvidence.source,
@@ -843,10 +849,27 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     reasonCodes.push("PHYSICAL_ACADEMY_BACHELOR_REQUIRED");
   }
 
+  criterionResults.trainingAvailability = {
+    pathway: normalizedPathway,
+    availableForFullTrainingPeriod: trainingAvailability,
+    requiredForPhysicalAcademy: physicalAcademyRequiresTrainingAvailability,
+    passed: hasRequiredPhysicalAcademyTrainingAvailability,
+  };
+
+  if (!hasRequiredPhysicalAcademyTrainingAvailability) {
+    reasonCodes.push("PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED");
+  }
+
   // Initial eligibility only decides whether the applicant can proceed to the
   // Basic IT Skills Test. Document and disability registration evidence is
   // reviewed later by the committee together with the test result.
-  const blockingReasonCodes = ["UNDER_AGE", "OVER_AGE", "NO_DISABILITY", "PHYSICAL_ACADEMY_BACHELOR_REQUIRED"];
+  const blockingReasonCodes = [
+    "UNDER_AGE",
+    "OVER_AGE",
+    "NO_DISABILITY",
+    "PHYSICAL_ACADEMY_BACHELOR_REQUIRED",
+    "PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED",
+  ];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",

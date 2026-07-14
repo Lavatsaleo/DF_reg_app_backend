@@ -136,16 +136,63 @@ function summarizeSkillsTest(applicant) {
   };
 }
 
-function summarizeApplicant(applicant) {
+function canSeeFullApplicantDetails(user, context = "review") {
+  if (isSuperAdmin(user)) return true;
+
+  // Chairpersons coordinate verification only after selection. Their full access is restricted
+  // to the selected participants report for their own country, not the blind review workspace.
+  return context === "selected-report" && user?.role === "COMMITTEE_CHAIRPERSON";
+}
+
+function getAnonymousApplicantReference(applicant) {
+  return (
+    applicant?.applicationReference ||
+    applicant?.participantCode ||
+    (applicant?.id ? `DF-${String(applicant.id).slice(0, 8).toUpperCase()}` : "Anonymous")
+  );
+}
+
+function getAnonymousApplicantLabel(applicant) {
+  return `Applicant ${getAnonymousApplicantReference(applicant)}`;
+}
+
+function summarizeApplicant(applicant, user = null, options = {}) {
   if (!applicant) return null;
+
+  const showFullDetails = canSeeFullApplicantDetails(user, options.context || "review");
+
+  if (!showFullDetails) {
+    return {
+      id: applicant.id,
+      isAnonymized: true,
+      fullName: getAnonymousApplicantLabel(applicant),
+      anonymousLabel: getAnonymousApplicantLabel(applicant),
+      participantCode: applicant.participantCode,
+      applicationReference: applicant.applicationReference,
+      pathway: applicant.pathway,
+      country: applicant.country,
+      ageAtApplication: applicant.ageAtApplication,
+      educationLevel: applicant.educationLevel,
+      employmentStatus: applicant.employmentStatus,
+      hasDisability: applicant.hasDisability,
+      disabilityType: applicant.disabilityType,
+      screeningStatus: applicant.screeningStatus,
+      status: applicant.status,
+      createdAt: applicant.createdAt,
+      updatedAt: applicant.updatedAt,
+      skillsTest: summarizeSkillsTest(applicant),
+    };
+  }
 
   return {
     id: applicant.id,
+    isAnonymized: false,
     fullName: formatApplicantName(applicant),
     firstName: applicant.firstName,
     lastName: applicant.lastName,
     email: applicant.email,
     contactNumber: applicant.contactNumber,
+    alternativeContactNumber: applicant.alternativeContactNumber,
     participantCode: applicant.participantCode,
     applicationReference: applicant.applicationReference,
     pathway: applicant.pathway,
@@ -156,12 +203,15 @@ function summarizeApplicant(applicant) {
     region: applicant.region,
     district: applicant.district,
     town: applicant.town,
+    dateOfBirth: applicant.dateOfBirth,
     sex: applicant.sex,
     ageAtApplication: applicant.ageAtApplication,
     educationLevel: applicant.educationLevel,
     employmentStatus: applicant.employmentStatus,
     hasDisability: applicant.hasDisability,
     disabilityType: applicant.disabilityType,
+    otherDisabilityType: applicant.otherDisabilityType,
+    accessibilityNeeds: applicant.accessibilityNeeds,
     screeningStatus: applicant.screeningStatus,
     status: applicant.status,
     createdAt: applicant.createdAt,
@@ -170,7 +220,32 @@ function summarizeApplicant(applicant) {
   };
 }
 
-function summarizeAssignment(assignment) {
+function getSearchTextForAssignment(assignment, user) {
+  const applicant = assignment.applicant || {};
+  const includeDirectIdentifiers = canSeeFullApplicantDetails(user);
+  const values = [
+    applicant.applicationReference,
+    applicant.participantCode,
+    applicant.country,
+    applicant.pathway,
+    applicant.status,
+    assignment.committeeMember?.fullName,
+  ];
+
+  if (includeDirectIdentifiers) {
+    values.push(
+      applicant.firstName,
+      applicant.lastName,
+      applicant.contactNumber,
+      applicant.email,
+      applicant.alternativeContactNumber
+    );
+  }
+
+  return values.filter(Boolean).join(" ").toLowerCase();
+}
+
+function summarizeAssignment(assignment, user = null, options = {}) {
   if (!assignment) return null;
 
   return {
@@ -181,7 +256,7 @@ function summarizeAssignment(assignment) {
     startedAt: assignment.startedAt,
     completedAt: assignment.completedAt,
     updatedAt: assignment.updatedAt,
-    applicant: summarizeApplicant(assignment.applicant),
+    applicant: summarizeApplicant(assignment.applicant, user, options),
     committeeMember: summarizeMember(assignment.committeeMember),
     assignedByMember: summarizeMember(assignment.assignedByMember),
     review: assignment.review
@@ -202,6 +277,79 @@ function summarizeAssignment(assignment) {
       toCommitteeMember: summarizeMember(item.toCommitteeMember),
       changedByMember: summarizeMember(item.changedByMember),
     })),
+  };
+}
+
+function getMostRelevantSelectionReview(applicant) {
+  const reviews = applicant?.committeeReviews || [];
+  return reviews.find((review) => review.decision === "SELECTED") || reviews[0] || null;
+}
+
+function summarizeSelectedParticipantReportRow(applicant, user) {
+  if (!canSeeFullApplicantDetails(user, "selected-report")) return null;
+
+  const review = getMostRelevantSelectionReview(applicant);
+  const assignment = applicant?.committeeAssignments?.[0] || null;
+  const districtLevel = applicant.district || applicant.subCounty || null;
+  const firstAdminLevel = applicant.county || applicant.state || applicant.region || null;
+
+  return {
+    id: applicant.id,
+    participantCode: applicant.participantCode,
+    applicationReference: applicant.applicationReference,
+    fullName: formatApplicantName(applicant),
+    firstName: applicant.firstName,
+    lastName: applicant.lastName,
+    email: applicant.email,
+    contactNumber: applicant.contactNumber,
+    alternativeContactNumber: applicant.alternativeContactNumber,
+    country: applicant.country,
+    county: applicant.county,
+    subCounty: applicant.subCounty,
+    state: applicant.state,
+    region: applicant.region,
+    district: applicant.district,
+    town: applicant.town,
+    firstAdminLevel,
+    districtLevel,
+    pathway: applicant.pathway,
+    ageAtApplication: applicant.ageAtApplication,
+    sex: applicant.sex,
+    educationLevel: applicant.educationLevel,
+    employmentStatus: applicant.employmentStatus,
+    hasDisability: applicant.hasDisability,
+    disabilityType: applicant.disabilityType,
+    otherDisabilityType: applicant.otherDisabilityType,
+    accessibilityNeeds: applicant.accessibilityNeeds,
+    preferredContactMethod: applicant.preferredContactMethod,
+    nextOfKinName: applicant.nextOfKinName,
+    nextOfKinPhone: applicant.nextOfKinPhone,
+    nextOfKinRelationship: applicant.nextOfKinRelationship,
+    status: applicant.status,
+    reviewDecision: applicant.reviewDecision,
+    reviewedAt: applicant.reviewedAt || review?.reviewedAt || null,
+    reviewedBy: review?.committeeMember
+      ? {
+          id: review.committeeMember.id,
+          fullName: review.committeeMember.fullName,
+          email: review.committeeMember.email,
+          role: review.committeeMember.role,
+          country: review.committeeMember.country,
+        }
+      : null,
+    committeeAssignment: assignment
+      ? {
+          id: assignment.id,
+          status: assignment.status,
+          assignedAt: assignment.assignedAt,
+          completedAt: assignment.completedAt,
+          committeeMember: summarizeMember(assignment.committeeMember),
+        }
+      : null,
+    skillsTest: summarizeSkillsTest(applicant),
+    verificationStatus: "Pending verification",
+    createdAt: applicant.createdAt,
+    updatedAt: applicant.updatedAt,
   };
 }
 
@@ -725,26 +873,14 @@ async function listCommitteeAssignments(req, res) {
     const filtered = search
       ? assignments.filter((assignment) => {
           const applicant = assignment.applicant || {};
-          const searchText = [
-            applicant.firstName,
-            applicant.lastName,
-            applicant.applicationReference,
-            applicant.participantCode,
-            applicant.contactNumber,
-            applicant.email,
-            applicant.country,
-            assignment.committeeMember?.fullName,
-          ]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
+          const searchText = getSearchTextForAssignment(assignment, req.user);
           return searchText.includes(search);
         })
       : assignments;
 
     return res.json({
       success: true,
-      assignments: filtered.map(summarizeAssignment),
+      assignments: filtered.map((assignment) => summarizeAssignment(assignment, req.user)),
     });
   } catch (error) {
     console.error("List committee assignments error:", error);
@@ -777,7 +913,7 @@ async function listUnassignedReadyApplicants(req, res) {
 
     return res.json({
       success: true,
-      applicants: applicants.map(summarizeApplicant),
+      applicants: applicants.map((applicant) => summarizeApplicant(applicant, req.user)),
     });
   } catch (error) {
     console.error("List unassigned ready applicants error:", error);
@@ -813,7 +949,7 @@ async function autoAssignReadyApplicants(req, res) {
       results: results.map((result) => ({
         applicantId: result.applicantId,
         assigned: result.assigned,
-        assignment: summarizeAssignment(result.assignment),
+        assignment: summarizeAssignment(result.assignment, req.user),
       })),
     });
   } catch (error) {
@@ -861,7 +997,7 @@ async function assignSingleApplicant(req, res) {
     return res.status(201).json({
       success: true,
       message: "Applicant assigned successfully.",
-      assignment: summarizeAssignment(assignment),
+      assignment: summarizeAssignment(assignment, req.user),
     });
   } catch (error) {
     console.error("Assign single applicant error:", error);
@@ -969,7 +1105,7 @@ async function reassignApplicant(req, res) {
     return res.json({
       success: true,
       message: "Applicant reassigned successfully.",
-      assignment: summarizeAssignment(result),
+      assignment: summarizeAssignment(result, req.user),
     });
   } catch (error) {
     console.error("Reassign applicant error:", error);
@@ -1025,7 +1161,7 @@ async function startReview(req, res) {
     return res.json({
       success: true,
       message: "Review started.",
-      assignment: summarizeAssignment(assignment),
+      assignment: summarizeAssignment(assignment, req.user),
     });
   } catch (error) {
     console.error("Start review error:", error);
@@ -1134,7 +1270,7 @@ async function submitCommitteeReview(req, res) {
       success: true,
       message: "Committee review decision saved successfully.",
       review: result,
-      assignment: summarizeAssignment(updatedAssignment),
+      assignment: summarizeAssignment(updatedAssignment, req.user),
     });
   } catch (error) {
     console.error("Submit committee review error:", error);
@@ -1142,6 +1278,79 @@ async function submitCommitteeReview(req, res) {
       success: false,
       message: error.statusCode ? error.message : "Failed to submit committee review.",
       error: error.statusCode ? undefined : error.message,
+    });
+  }
+}
+
+async function listSelectedParticipantsReport(req, res) {
+  try {
+    if (!canSeeFullApplicantDetails(req.user, "selected-report")) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have permission to view the selected participants report.",
+      });
+    }
+
+    const requestedCountry = normalizeCountry(req.query.country);
+    let countryFilter = {};
+
+    if (isSuperAdmin(req.user)) {
+      if (requestedCountry) countryFilter.country = requestedCountry;
+    } else {
+      const country = getUserCountry(req.user);
+      if (!country) {
+        return res.status(403).json({
+          success: false,
+          message: "Your chairperson account is not assigned to a country, so the verification report cannot be opened.",
+        });
+      }
+
+      countryFilter.country = country;
+    }
+
+    const applicants = await prisma.applicant.findMany({
+      where: {
+        ...countryFilter,
+        OR: [
+          { status: "APPROVED_FOR_ENROLLMENT" },
+          { reviewDecision: "APPROVED" },
+          { committeeReviews: { some: { decision: "SELECTED" } } },
+        ],
+      },
+      orderBy: [{ country: "asc" }, { reviewedAt: "desc" }, { updatedAt: "desc" }],
+      include: {
+        skillsTestAttempts: {
+          orderBy: { submittedAt: "desc" },
+          take: 1,
+        },
+        committeeReviews: {
+          orderBy: { reviewedAt: "desc" },
+          include: { committeeMember: true },
+        },
+        committeeAssignments: {
+          orderBy: { updatedAt: "desc" },
+          include: {
+            committeeMember: true,
+            review: true,
+          },
+          take: 1,
+        },
+      },
+      take: 500,
+    });
+
+    return res.json({
+      success: true,
+      reportScope: isSuperAdmin(req.user) ? requestedCountry || "ALL_COUNTRIES" : getUserCountry(req.user),
+      generatedAt: new Date(),
+      rows: applicants.map((applicant) => summarizeSelectedParticipantReportRow(applicant, req.user)).filter(Boolean),
+    });
+  } catch (error) {
+    console.error("Selected participants report error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load the selected participants report.",
+      error: error.message,
     });
   }
 }
@@ -1159,4 +1368,5 @@ module.exports = {
   reassignApplicant,
   startReview,
   submitCommitteeReview,
+  listSelectedParticipantsReport,
 };
