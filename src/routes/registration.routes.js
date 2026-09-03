@@ -1,6 +1,7 @@
 const express = require("express");
 const upload = require("../middleware/upload.middleware");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
+const { requireApplicationConsent } = require("../middleware/consent.middleware");
 
 const {
   submitRegistration,
@@ -21,7 +22,7 @@ router.post("/drafts", saveRegistrationDraft);
 router.post("/drafts/resume", resumeRegistrationDraft);
 router.get("/drafts/:draftReference", getRegistrationDraft);
 
-router.post("/", upload.array("documents", 10), submitRegistration);
+router.post("/", upload.array("documents", 10), requireApplicationConsent, submitRegistration);
 
 router.get("/", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicants);
 
