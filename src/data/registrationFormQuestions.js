@@ -66,7 +66,7 @@ const registrationFormQuestions = [
     helpText: "Captured automatically from the Physical Academy pathway selected on the landing page.",
   },
   {
-    questionNumber: 0.1,
+    questionNumber: 1,
     questionCode: "CONSENT_INFORMATION_READ",
     questionText: "I have read and understood the participant information provided above.",
     section: "Consent",
@@ -77,7 +77,7 @@ const registrationFormQuestions = [
     hiddenFromApplicant: true,
   },
   {
-    questionNumber: 0.2,
+    questionNumber: 2,
     questionCode: "REGISTRATION_CONSENT",
     questionText: "I agree to take part in this questionnaire and allow my information to be used for the purposes explained above.",
     section: "Consent",
@@ -88,7 +88,7 @@ const registrationFormQuestions = [
     hiddenFromApplicant: true,
   },
   {
-    questionNumber: 1,
+    questionNumber: 3,
     questionCode: "TRAINING_AVAILABILITY",
     questionText: "Are you available for the full duration of the Physical Academy training (9 months)?",
     section: "Training Commitment",
@@ -99,7 +99,7 @@ const registrationFormQuestions = [
     helpText: "The Physical Academy is a 9-month, face-to-face programme. Classes are expected to run Monday to Friday. You must be able to commit to the full training period.",
   },
   {
-    questionNumber: 2,
+    questionNumber: 4,
     questionCode: "COUNTRY",
     questionText: "Country of residence",
     section: "Personal Details",
@@ -110,7 +110,7 @@ const registrationFormQuestions = [
     metadata: { dialCodes: COUNTRY_DIAL_CODES, locationHierarchy: LOCATION_HIERARCHY },
   },
   {
-    questionNumber: 3,
+    questionNumber: 5,
     questionCode: "COUNTY",
     questionText: "County",
     section: "Personal Details",
@@ -120,7 +120,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "COUNTRY", operator: "equals", value: "Kenya" },
   },
   {
-    questionNumber: 4,
+    questionNumber: 6,
     questionCode: "SUB_COUNTY",
     questionText: "Sub-county",
     section: "Personal Details",
@@ -135,7 +135,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "COUNTRY", operator: "equals", value: "Kenya" },
   },
   {
-    questionNumber: 5,
+    questionNumber: 7,
     questionCode: "STATE",
     questionText: "State",
     section: "Personal Details",
@@ -149,7 +149,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "COUNTRY", operator: "in", value: ["Nigeria", "Zambia"] },
   },
   {
-    questionNumber: 6,
+    questionNumber: 8,
     questionCode: "REGION",
     questionText: "Region",
     section: "Personal Details",
@@ -159,7 +159,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "COUNTRY", operator: "equals", value: "Ghana" },
   },
   {
-    questionNumber: 7,
+    questionNumber: 9,
     questionCode: "DISTRICT",
     questionText: "District",
     section: "Personal Details",
@@ -178,7 +178,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "COUNTRY", operator: "in", value: ["Nigeria", "Ghana", "Zambia"] },
   },
   {
-    questionNumber: 8,
+    questionNumber: 10,
     questionCode: "TOWN",
     questionText: "Town",
     section: "Personal Details",
@@ -186,7 +186,7 @@ const registrationFormQuestions = [
     required: true,
   },
   {
-    questionNumber: 9,
+    questionNumber: 11,
     questionCode: "FIRST_NAME",
     questionText: "First name (as it appears on your ID)",
     section: "Personal Details",
@@ -195,7 +195,7 @@ const registrationFormQuestions = [
     validationType: "PERSON_NAME",
   },
   {
-    questionNumber: 10,
+    questionNumber: 12,
     questionCode: "MIDDLE_NAME",
     questionText: "Middle name (as it appears on your ID)",
     section: "Personal Details",
@@ -204,7 +204,7 @@ const registrationFormQuestions = [
     validationType: "PERSON_NAME",
   },
   {
-    questionNumber: 11,
+    questionNumber: 13,
     questionCode: "LAST_NAME",
     questionText: "Last name / surname (as it appears on your ID)",
     section: "Personal Details",
@@ -213,7 +213,7 @@ const registrationFormQuestions = [
     validationType: "PERSON_NAME",
   },
   {
-    questionNumber: 12,
+    questionNumber: 14,
     questionCode: "SEX",
     questionText: "Sex",
     section: "Personal Details",
@@ -222,7 +222,7 @@ const registrationFormQuestions = [
     options: ["Female", "Male"],
   },
   {
-    questionNumber: 13,
+    questionNumber: 15,
     questionCode: "NATIONAL_ID_NUMBER",
     questionText: "National ID / passport / other national identification number",
     section: "Personal Details",
@@ -232,7 +232,7 @@ const registrationFormQuestions = [
     helpText: "Enter numbers and special characters only. No document upload is required at this stage.",
   },
   {
-    questionNumber: 14,
+    questionNumber: 16,
     questionCode: "DATE_OF_BIRTH",
     questionText: "Date of birth (same as what appears on your identification document)",
     section: "Personal Details",
@@ -244,7 +244,7 @@ const registrationFormQuestions = [
     helpText: `Applicants must be ${MIN_ELIGIBLE_AGE} to ${MAX_ELIGIBLE_AGE} years old at the time of application.`,
   },
   {
-    questionNumber: 15,
+    questionNumber: 17,
     questionCode: "CONTACT_NUMBER",
     questionText: "Primary phone",
     section: "Personal Details",
@@ -253,7 +253,7 @@ const registrationFormQuestions = [
     validationType: "PHONE_DIGITS",
   },
   {
-    questionNumber: 16,
+    questionNumber: 18,
     questionCode: "ALTERNATIVE_CONTACT_NUMBER",
     questionText: "Alternative phone",
     section: "Personal Details",
@@ -262,7 +262,7 @@ const registrationFormQuestions = [
     validationType: "PHONE_DIGITS",
   },
   {
-    questionNumber: 17,
+    questionNumber: 19,
     questionCode: "EMAIL",
     questionText: "Email address",
     section: "Personal Details",
@@ -270,7 +270,7 @@ const registrationFormQuestions = [
     required: true,
   },
   {
-    questionNumber: 18,
+    questionNumber: 20,
     questionCode: "PREFERRED_CONTACT_METHOD",
     questionText: "Preferred contact method / communication accommodation",
     section: "Personal Details",
@@ -279,7 +279,7 @@ const registrationFormQuestions = [
     options: ["Voice call", "SMS", "WhatsApp text", "WhatsApp video", "WhatsApp voice note", "Email", "Other"],
   },
   {
-    questionNumber: 19,
+    questionNumber: 21,
     questionCode: "PREFERRED_CONTACT_METHOD_OTHER",
     questionText: "Other preferred contact method, please specify",
     section: "Personal Details",
@@ -288,7 +288,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "PREFERRED_CONTACT_METHOD", operator: "equals", value: "Other" },
   },
   {
-    questionNumber: 20,
+    questionNumber: 22,
     questionCode: "NEXT_OF_KIN_NAME",
     questionText: "Emergency contact name (spouse, parent or sibling)",
     section: "Emergency Contact",
@@ -297,7 +297,7 @@ const registrationFormQuestions = [
     validationType: "PERSON_NAME",
   },
   {
-    questionNumber: 21,
+    questionNumber: 23,
     questionCode: "NEXT_OF_KIN_PHONE",
     questionText: "Emergency contact phone",
     section: "Emergency Contact",
@@ -306,7 +306,7 @@ const registrationFormQuestions = [
     validationType: "PHONE_DIGITS",
   },
   {
-    questionNumber: 22,
+    questionNumber: 24,
     questionCode: "NEXT_OF_KIN_RELATIONSHIP",
     questionText: "Relationship to emergency contact",
     section: "Emergency Contact",
@@ -315,7 +315,7 @@ const registrationFormQuestions = [
     options: ["Spouse", "Parent", "Sibling", "Other"],
   },
   {
-    questionNumber: 23,
+    questionNumber: 25,
     questionCode: "EDUCATION_LEVEL",
     questionText: "What is the highest level of education you have completed?",
     section: "Education",
@@ -326,7 +326,7 @@ const registrationFormQuestions = [
     helpText: "Physical Academy applicants must have completed a Bachelor’s degree or Postgraduate qualification.",
   },
   {
-    questionNumber: 24,
+    questionNumber: 26,
     questionCode: "EDUCATION_LEVEL_OTHER",
     questionText: "If other, specify your highest completed education level",
     section: "Education",
@@ -335,7 +335,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "EDUCATION_LEVEL", operator: "equals", value: "Other" },
   },
   {
-    questionNumber: 25,
+    questionNumber: 27,
     questionCode: "COURSE_STUDIED",
     questionText: "What course did you study in university/college? Please state the full qualification title as it appears on your academic certificate or transcript (e.g. BA in History).",
     section: "Education",
@@ -344,7 +344,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "EDUCATION_LEVEL", operator: "in", value: ["Vocational", "Diploma", "Bachelor’s degree", "Postgraduate"] },
   },
   {
-    questionNumber: 26,
+    questionNumber: 28,
     questionCode: "HAS_DISABILITY",
     questionText: "Do you consider yourself to have a disability?",
     section: "Disability and Accessibility",
@@ -354,7 +354,7 @@ const registrationFormQuestions = [
     options: ["Yes", "No"],
   },
   {
-    questionNumber: 27,
+    questionNumber: 29,
     questionCode: "DISABILITY_TYPE",
     questionText: "Sightsavers aims to ensure that diverse people with disabilities are represented in our programmes. Please state your disability type. You can choose multiple.",
     section: "Disability and Accessibility",
@@ -364,7 +364,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "HAS_DISABILITY", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 28,
+    questionNumber: 30,
     questionCode: "OTHER_DISABILITY_TYPE",
     questionText: "Other disability type, please specify",
     section: "Disability and Accessibility",
@@ -373,7 +373,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "DISABILITY_TYPE", operator: "contains", value: "Other" },
   },
   {
-    questionNumber: 29,
+    questionNumber: 31,
     questionCode: "ACCESSIBILITY_NEEDS",
     questionText: "Do you have any accessibility requirements for which you require additional support? This information does not inform selection; it helps us understand support needs.",
     section: "Disability and Accessibility",
@@ -382,7 +382,7 @@ const registrationFormQuestions = [
     options: ACCESSIBILITY_OPTIONS,
   },
   {
-    questionNumber: 30,
+    questionNumber: 32,
     questionCode: "ACCESSIBILITY_NEEDS_OTHER",
     questionText: "Other accessibility requirement, please specify",
     section: "Disability and Accessibility",
@@ -391,7 +391,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "ACCESSIBILITY_NEEDS", operator: "contains", value: "Other" },
   },
   {
-    questionNumber: 31,
+    questionNumber: 33,
     questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING",
     questionText: "Have you participated in any Sightsavers trainings?",
     section: "Previous Sightsavers Training",
@@ -400,7 +400,7 @@ const registrationFormQuestions = [
     options: ["Yes", "No"],
   },
   {
-    questionNumber: 32,
+    questionNumber: 34,
     questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING_TYPES",
     questionText: "If yes, what Sightsavers trainings have you participated in?",
     section: "Previous Sightsavers Training",
@@ -410,7 +410,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 33,
+    questionNumber: 35,
     questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING_OTHER",
     questionText: "Other Sightsavers training, please specify",
     section: "Previous Sightsavers Training",
@@ -419,7 +419,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "PREVIOUS_SIGHTSAVERS_TRAINING_TYPES", operator: "contains", value: "Other" },
   },
   {
-    questionNumber: 34,
+    questionNumber: 36,
     questionCode: "MOTIVATION",
     questionText: "Why do you want to be part of this training? Tell us your motivation for applying to be part of this programme.",
     section: "Motivation and Course Interests",
@@ -427,7 +427,7 @@ const registrationFormQuestions = [
     required: true,
   },
   {
-    questionNumber: 35,
+    questionNumber: 37,
     questionCode: "AI_RANK_SOFTWARE_DEVELOPMENT",
     questionText: "Software Development with AI — rank your interest (1 = first choice, 4 = fourth choice)",
     section: "Motivation and Course Interests",
@@ -437,7 +437,7 @@ const registrationFormQuestions = [
     metadata: { rankGroup: "AI_COURSES" },
   },
   {
-    questionNumber: 36,
+    questionNumber: 38,
     questionCode: "AI_RANK_DATA_ANALYSIS",
     questionText: "Data Analysis and Visualisation with AI — rank your interest (1 = first choice, 4 = fourth choice)",
     section: "Motivation and Course Interests",
@@ -447,7 +447,7 @@ const registrationFormQuestions = [
     metadata: { rankGroup: "AI_COURSES" },
   },
   {
-    questionNumber: 37,
+    questionNumber: 39,
     questionCode: "AI_RANK_CYBERSECURITY",
     questionText: "Cybersecurity with AI — rank your interest (1 = first choice, 4 = fourth choice)",
     section: "Motivation and Course Interests",
@@ -457,7 +457,7 @@ const registrationFormQuestions = [
     metadata: { rankGroup: "AI_COURSES" },
   },
   {
-    questionNumber: 38,
+    questionNumber: 40,
     questionCode: "AI_RANK_CLOUD_COMPUTING",
     questionText: "Cloud Computing with AI — rank your interest (1 = first choice, 4 = fourth choice)",
     section: "Motivation and Course Interests",
@@ -467,7 +467,7 @@ const registrationFormQuestions = [
     metadata: { rankGroup: "AI_COURSES" },
   },
   {
-    questionNumber: 39,
+    questionNumber: 41,
     questionCode: "HEARD_ABOUT_PROJECT",
     questionText: "How did you hear about the Digital Futures programme?",
     section: "Programme Awareness",
@@ -476,7 +476,7 @@ const registrationFormQuestions = [
     options: ["Radio", "TV", "Social media", "Friend / family", "TVET / University", "Organisation of persons with disabilities (OPD)", "Community leader", "Employer / BDN", "Other"],
   },
   {
-    questionNumber: 40,
+    questionNumber: 42,
     questionCode: "HEARD_ABOUT_PROJECT_OTHER",
     questionText: "Other source, please specify",
     section: "Programme Awareness",
@@ -485,7 +485,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: "Other" },
   },
   {
-    questionNumber: 41,
+    questionNumber: 43,
     questionCode: "JURAT_REQUIRED",
     questionText: "Did you require someone to translate or explain this Application to you?",
     section: "Jurat / Interpreter",
@@ -494,7 +494,7 @@ const registrationFormQuestions = [
     options: ["Yes", "No"],
   },
   {
-    questionNumber: 42,
+    questionNumber: 44,
     questionCode: "JURAT_INTERPRETER_NAME",
     questionText: "Interpreter / person who explained the Application — full name",
     section: "Jurat / Interpreter",
@@ -504,7 +504,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "JURAT_REQUIRED", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 43,
+    questionNumber: 45,
     questionCode: "JURAT_INTERPRETER_ADDRESS",
     questionText: "Interpreter address",
     section: "Jurat / Interpreter",
@@ -513,7 +513,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "JURAT_REQUIRED", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 44,
+    questionNumber: 46,
     questionCode: "JURAT_LANGUAGE",
     questionText: "Language / dialect used to translate or explain the Application",
     section: "Jurat / Interpreter",
@@ -522,7 +522,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "JURAT_REQUIRED", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 45,
+    questionNumber: 47,
     questionCode: "JURAT_INTERPRETER_SIGNATURE",
     questionText: "Interpreter electronic signature (type full name)",
     section: "Jurat / Interpreter",
@@ -532,7 +532,7 @@ const registrationFormQuestions = [
     showIf: { questionCode: "JURAT_REQUIRED", operator: "equals", value: "Yes" },
   },
   {
-    questionNumber: 46,
+    questionNumber: 48,
     questionCode: "JURAT_DATE",
     questionText: "Date of interpretation / explanation",
     section: "Jurat / Interpreter",
