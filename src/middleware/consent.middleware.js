@@ -88,7 +88,7 @@ function requireApplicationConsent(req, res, next) {
     const interpreterAddress = getAnswer(responses, "JURAT_INTERPRETER_ADDRESS");
     const language = getAnswer(responses, "JURAT_LANGUAGE");
     const interpreterSignatureMethod = getAnswer(responses, "JURAT_SIGNATURE_METHOD");
-    const interpreterSignature = getAnswer(responses, "JURAT_INTERPRETER_SIGNATURE");
+    const interpreterSignatureData = getAnswer(responses, "JURAT_SIGNATURE_DATA");
     const juratDate = getAnswer(responses, "JURAT_DATE");
 
     if (
@@ -96,7 +96,7 @@ function requireApplicationConsent(req, res, next) {
       !hasValue(interpreterAddress) ||
       !hasValue(language) ||
       !hasValue(juratDate) ||
-      !isSupportedSignature(interpreterSignatureMethod, interpreterSignature)
+      !isSupportedSignature(interpreterSignatureMethod, interpreterSignatureData)
     ) {
       return res.status(400).json({
         success: false,
