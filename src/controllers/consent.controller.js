@@ -17,6 +17,7 @@ const CONSENT_CODES = [
   "JURAT_INTERPRETER_ADDRESS",
   "JURAT_LANGUAGE",
   "JURAT_SIGNATURE_METHOD",
+  "JURAT_SIGNATURE_DATA",
   "JURAT_INTERPRETER_SIGNATURE",
   "JURAT_DATE",
 ];
@@ -63,7 +64,7 @@ function buildConsentRecord(applicant) {
       interpreterAddress: answers.JURAT_INTERPRETER_ADDRESS || null,
       language: answers.JURAT_LANGUAGE || null,
       signatureMethod: answers.JURAT_SIGNATURE_METHOD || null,
-      signatureData: answers.JURAT_INTERPRETER_SIGNATURE || null,
+      signatureData: answers.JURAT_SIGNATURE_DATA || null,
       date: answers.JURAT_DATE || null,
     },
   };
