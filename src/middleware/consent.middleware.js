@@ -18,8 +18,12 @@ function parseResponses(req) {
   }
 }
 
+function getResponse(responses, questionCode) {
+  return responses.find((item) => item.questionCode === questionCode);
+}
+
 function getAnswer(responses, questionCode) {
-  return responses.find((item) => item.questionCode === questionCode)?.answer;
+  return getResponse(responses, questionCode)?.answer;
 }
 
 function hasValue(value) {
@@ -38,6 +42,33 @@ function isSupportedSignature(method, data) {
   }
 
   return signature.trim().length >= 2;
+}
+
+function preserveJuratSignatureForStorage(req, responses, interpreterName, signatureData) {
+  const existingSignatureData = getResponse(responses, "JURAT_SIGNATURE_DATA");
+
+  if (existingSignatureData) {
+    existingSignatureData.answer = signatureData;
+  } else {
+    responses.push({
+      questionCode: "JURAT_SIGNATURE_DATA",
+      questionNumber: null,
+      questionText: "Interpreter electronic signature",
+      section: "Jurat / Interpreter",
+      responseType: "LONG_TEXT",
+      answer: signatureData,
+    });
+  }
+
+  const legacySignatureField = getResponse(responses, "JURAT_INTERPRETER_SIGNATURE");
+  if (legacySignatureField) {
+    // The existing form definition validates this field as a person name.
+    // Keep the interpreter name there for backward compatibility and store
+    // the actual drawn/typed signature separately in JURAT_SIGNATURE_DATA.
+    legacySignatureField.answer = interpreterName;
+  }
+
+  req.body.responses = JSON.stringify(responses);
 }
 
 function requireApplicationConsent(req, res, next) {
@@ -88,7 +119,7 @@ function requireApplicationConsent(req, res, next) {
     const interpreterAddress = getAnswer(responses, "JURAT_INTERPRETER_ADDRESS");
     const language = getAnswer(responses, "JURAT_LANGUAGE");
     const interpreterSignatureMethod = getAnswer(responses, "JURAT_SIGNATURE_METHOD");
-    const interpreterSignatureData = getAnswer(responses, "JURAT_SIGNATURE_DATA");
+    const interpreterSignatureData = getAnswer(responses, "JURAT_INTERPRETER_SIGNATURE");
     const juratDate = getAnswer(responses, "JURAT_DATE");
 
     if (
@@ -104,6 +135,8 @@ function requireApplicationConsent(req, res, next) {
         message: "Please complete the Jurat interpreter details, date and electronic signature before continuing.",
       });
     }
+
+    preserveJuratSignatureForStorage(req, responses, interpreterName, interpreterSignatureData);
   }
 
   return next();
