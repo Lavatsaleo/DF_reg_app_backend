@@ -12,6 +12,9 @@ const CONSENT_CODES = [
   "CONSENT_SIGNED_DATE",
   "CONSENT_SIGNATURE_METHOD",
   "CONSENT_SIGNATURE_DATA",
+  "CONSENT_DETECTED_COUNTRY",
+  "CONSENT_CONTACT_CONTEXT",
+  "CONSENT_CONTACTS_AT_SIGNING",
   "JURAT_REQUIRED",
   "JURAT_INTERPRETER_NAME",
   "JURAT_INTERPRETER_ADDRESS",
@@ -38,6 +41,16 @@ function responseMap(responses = []) {
   }, {});
 }
 
+function parseJsonValue(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return null;
+  }
+}
+
 function buildConsentRecord(applicant) {
   const answers = responseMap(applicant.responses);
   const version = answers.CONSENT_VERSION || PHYSICAL_ACADEMY_CONSENT_VERSION;
@@ -48,6 +61,10 @@ function buildConsentRecord(applicant) {
     participantCode: applicant.participantCode,
     applicantName: [applicant.firstName, applicant.lastName].filter(Boolean).join(" "),
     country: applicant.country,
+    countryOfResidence: applicant.country,
+    detectedCountryAtConsent: answers.CONSENT_DETECTED_COUNTRY || null,
+    contactContextAtSigning: answers.CONSENT_CONTACT_CONTEXT || null,
+    contactsDisplayedAtSigning: parseJsonValue(answers.CONSENT_CONTACTS_AT_SIGNING),
     pathway: applicant.pathway,
     submittedAt: applicant.createdAt,
     consentVersion: version,
