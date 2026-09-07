@@ -1,21 +1,21 @@
-const PHYSICAL_ACADEMY_CONSENT_VERSION = "DF-01-APPLICATION-2026-09-07";
+const PHYSICAL_ACADEMY_CONSENT_VERSION = "DF-01-APPLICATION-2026-09-07-V2";
 
 const COUNTRY_CONTACTS = {
   Kenya: {
-    safeguarding: "To be confirmed",
+    safeguarding: "smbuguamutua@sightsavers.org",
     questions: "tmaritim@sightsavers.org",
   },
   Nigeria: {
-    safeguarding: "To be confirmed",
-    questions: "To be confirmed",
+    safeguarding: "faliu@sightsavers.org",
+    questions: "tikenwobodo@sightsavers.org",
   },
   Ghana: {
-    safeguarding: "To be confirmed",
-    questions: "To be confirmed",
+    safeguarding: "ratengdem@sightsavers.org",
+    questions: "eboateng@sightsavers.org",
   },
   Zambia: {
     safeguarding: "fkalusa@sightsavers.org",
-    questions: "To be confirmed",
+    questions: "KMuhau@sightsavers.org",
   },
 };
 
@@ -64,7 +64,7 @@ const PHYSICAL_ACADEMY_CONSENT = {
   ],
   juratTitle: "JURAT CLAUSE",
   juratWhen: "(To be used where the participant does not speak, read, or write English, or has a disability requiring the form to be translated or explained):",
-  juratClause: "“I [name] of [address] have distinctly, clearly, and audibly interpreted/explained the above in the [name of language] language/dialect to the abovenamed person who seemed to clearly understand the above and who made his/her mark in my presence\".",
+  juratClause: "“I [name] of [address] have distinctly, clearly, and audibly interpreted/explained the above in the [name of language] language/dialect to the abovenamed person who seemed to clearly understand the above and who made his/her mark in my presence”.",
 };
 
 module.exports = {
