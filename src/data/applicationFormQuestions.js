@@ -9,6 +9,11 @@ const ENTRY_ONLY_CODES = new Set([
   "JURAT_DATE",
 ]);
 
+const PHYSICAL_ONLY_CODES = new Set([
+  "HEARD_ABOUT_PROJECT",
+  "HEARD_ABOUT_PROJECT_OTHER",
+]);
+
 const sharedQuestions = physicalBaseQuestions.map((question) => {
   const next = { ...question };
 
@@ -35,6 +40,14 @@ const sharedQuestions = physicalBaseQuestions.map((question) => {
 
   if (ENTRY_ONLY_CODES.has(question.questionCode)) {
     next.hiddenFromApplicant = true;
+  }
+
+  if (PHYSICAL_ONLY_CODES.has(question.questionCode)) {
+    next.showIf = {
+      questionCode: "COURSE_APPLIED_FOR",
+      operator: "equals",
+      value: "Physical Academy",
+    };
   }
 
   return next;
