@@ -1,4 +1,23 @@
-const PHYSICAL_ACADEMY_CONSENT_VERSION = "DF-01-PHYSICAL-2026-09-03";
+const PHYSICAL_ACADEMY_CONSENT_VERSION = "DF-01-APPLICATION-2026-09-07";
+
+const COUNTRY_CONTACTS = {
+  Kenya: {
+    safeguarding: "To be confirmed",
+    questions: "tmaritim@sightsavers.org",
+  },
+  Nigeria: {
+    safeguarding: "To be confirmed",
+    questions: "To be confirmed",
+  },
+  Ghana: {
+    safeguarding: "To be confirmed",
+    questions: "To be confirmed",
+  },
+  Zambia: {
+    safeguarding: "fkalusa@sightsavers.org",
+    questions: "To be confirmed",
+  },
+};
 
 const PHYSICAL_ACADEMY_CONSENT = {
   version: PHYSICAL_ACADEMY_CONSENT_VERSION,
@@ -25,14 +44,12 @@ const PHYSICAL_ACADEMY_CONSENT = {
     },
   ],
   rightsTitle: "Your Rights:",
-  rights: [
-    "You have the right to access, correct, delete, restrict, object to the use of, or request transfer of your personal data. You have the right to be treated fairly and with respect by everyone involved in this project. If you have any concerns about someone's behaviour, please contact the Country Safeguarding Lead (Respective country safeguarding lead) or use the Speak Up platform: ",
-  ],
+  rightsIntro: "You have the right to access, correct, delete, restrict, object to the use of, or request transfer of your personal data. You have the right to be treated fairly and with respect by everyone involved in this project. If you have any concerns about someone's behaviour, please contact the Country Safeguarding Lead:",
+  speakUpPrefix: "Alternatively, use the Speak Up platform: ",
   speakUpUrl: "https://www.sightsavers.org/how-were-run/accountability-and-transparency/speakup/",
   questionsTitle: "Questions or concerns",
-  questions: [
-    "If you have any questions about the application form, kindly contact: (Respective MEL and Programme managers)",
-  ],
+  questionsIntro: "If you have any questions about the application form, kindly contact:",
+  countryContacts: COUNTRY_CONTACTS,
   consentTitle: "Your Consent",
   consentIntro: "By proceeding to complete this questionnaire, you confirm that:",
   consentBullets: [
@@ -53,4 +70,5 @@ const PHYSICAL_ACADEMY_CONSENT = {
 module.exports = {
   PHYSICAL_ACADEMY_CONSENT_VERSION,
   PHYSICAL_ACADEMY_CONSENT,
+  COUNTRY_CONTACTS,
 };
