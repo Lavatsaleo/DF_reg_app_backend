@@ -516,6 +516,8 @@ async function findIncompleteDraftByIdentifier(identifier) {
 }
 
 const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FINAL_APPLICATION_V4";
+const MIN_ELIGIBLE_AGE = 18;
+const MAX_ELIGIBLE_AGE = 45;
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
 
@@ -800,8 +802,8 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   };
 }
 
-function buildResponseRecord(applicantId, response) {
-  const questionDefinition = registrationFormQuestions.find(
+function buildResponseRecord(applicantId, response, questions = registrationFormQuestions) {
+  const questionDefinition = questions.find(
     (question) => question.questionCode === response.questionCode
   );
 
@@ -868,11 +870,15 @@ function buildResponseRecord(applicantId, response) {
 
 
 async function getRegistrationFormQuestions(req, res) {
+  const pathway = normalizePathway(req.query.pathway || "PHYSICAL_ACADEMY");
+  const questions = getApplicationQuestionsForPathway(pathway);
+
   return res.json({
     success: true,
-    formVersion: REGISTRATION_FORM_VERSION,
+    pathway,
+    formVersion: getApplicationFormVersion(pathway),
     screeningVersion: ELIGIBILITY_SCREENING_VERSION,
-    questions: registrationFormQuestions,
+    questions,
   });
 }
 
@@ -921,7 +927,7 @@ async function saveRegistrationDraft(req, res) {
       }
     }
 
-    const completionPercent = calculateDraftCompletionPercent(answers);
+    const completionPercent = calculateDraftCompletionPercent(answers, pathway);
     const now = new Date();
 
     const draft = await prisma.$transaction(async (tx) => {
@@ -1103,7 +1109,10 @@ async function submitRegistration(req, res) {
       });
     }
 
-    const missingRequiredQuestions = validateRequiredQuestions(parsedResponses);
+    const pathway = normalizePathway(req.body.pathway);
+    const pathwayQuestions = getApplicationQuestionsForPathway(pathway);
+
+    const missingRequiredQuestions = validateRequiredQuestions(parsedResponses, pathwayQuestions);
 
     if (missingRequiredQuestions.length > 0) {
       return res.status(400).json({
@@ -1112,7 +1121,7 @@ async function submitRegistration(req, res) {
       });
     }
 
-    const invalidQuestions = validateQuestionFormats(parsedResponses);
+    const invalidQuestions = validateQuestionFormats(parsedResponses, pathwayQuestions);
 
     if (invalidQuestions.length > 0) {
       return res.status(400).json({
@@ -1191,8 +1200,6 @@ async function submitRegistration(req, res) {
     const registrationMode = normalizeRegistrationMode(
       req.body.registrationMode
     );
-
-    const pathway = normalizePathway(req.body.pathway);
 
     const eligibilityResult = calculateEligibility(parsedResponses, new Date(), pathway);
 
@@ -1320,7 +1327,7 @@ async function submitRegistration(req, res) {
 
           registrationMode,
           pathway,
-          formVersion: REGISTRATION_FORM_VERSION,
+          formVersion: getApplicationFormVersion(pathway),
 
           isEligible: eligibilityResult.isEligible,
           eligibilityReason: eligibilityResult.reason,
@@ -1335,7 +1342,7 @@ async function submitRegistration(req, res) {
       });
 
       const responseRecords = parsedResponses.map((response) =>
-        buildResponseRecord(createdApplicant.id, response)
+        buildResponseRecord(createdApplicant.id, response, pathwayQuestions)
       );
 
       await tx.registrationResponse.createMany({
