@@ -3,6 +3,7 @@ const upload = require("../middleware/upload.middleware");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const {
   getParticipantRegistrationForm,
+  saveParticipantRegistrationSupportRequest,
   submitParticipantRegistration,
   resendParticipantRegistrationInvitation,
 } = require("../controllers/participantRegistration.controller");
@@ -10,6 +11,11 @@ const {
 const router = express.Router();
 
 router.get("/invite/:token", getParticipantRegistrationForm);
+
+router.post(
+  "/invite/:token/support-request",
+  saveParticipantRegistrationSupportRequest
+);
 
 router.post(
   "/invite/:token/submit",
