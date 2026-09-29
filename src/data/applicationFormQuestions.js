@@ -137,6 +137,16 @@ function setupQuestions(pathway) {
   return [
     {
       questionNumber: null,
+      questionCode: "APPLICATION_FORM_VERSION",
+      questionText: "Application form version",
+      section: "Application Setup",
+      responseType: "TEXT",
+      required: false,
+      hiddenFromApplicant: true,
+      options: [],
+    },
+    {
+      questionNumber: null,
       questionCode: "COURSE_APPLIED_FOR",
       questionText: "Digital Futures pathway",
       section: "Application Setup",
