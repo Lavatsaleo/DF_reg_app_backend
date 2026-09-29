@@ -8,6 +8,7 @@ const {
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
+const { assignApplicantToLeastLoadedMember } = require("../services/committeeAssignment.service");
 const { getApplicantCountryFilter, canAccessCountry } = require("../utils/countryAccess");
 const {
   generateParticipantCode,
@@ -29,6 +30,15 @@ const PATHWAY_TITLES = {
   VIRTUAL_ACADEMY: "Virtual Academy",
   DIGITAL_ENTREPRENEURSHIP: "Digital Entrepreneurship",
 };
+
+const BASIC_SKILLS_TEST_PATHWAYS = new Set([
+  "PHYSICAL_ACADEMY",
+  "VIRTUAL_ACADEMY",
+]);
+
+function pathwayRequiresBasicSkillsTest(pathway) {
+  return BASIC_SKILLS_TEST_PATHWAYS.has(normalizePathway(pathway));
+}
 
 
 function toBoolean(value) {
@@ -1281,9 +1291,13 @@ async function submitRegistration(req, res) {
 
     const eligibilityResult = calculateEligibility(parsedResponses, new Date(), pathway);
 
+    const requiresBasicSkillsTest = pathwayRequiresBasicSkillsTest(pathway);
+
     const finalStatus =
       eligibilityResult.screeningStatus === "ELIGIBLE"
-        ? "ELIGIBLE_PENDING_SKILLS_TEST"
+        ? requiresBasicSkillsTest
+          ? "ELIGIBLE_PENDING_SKILLS_TEST"
+          : "PENDING_REVIEW"
         : eligibilityResult.screeningStatus === "PENDING_REVIEW"
           ? "PENDING_REVIEW"
           : "INELIGIBLE";
@@ -1454,8 +1468,9 @@ async function submitRegistration(req, res) {
       });
 
       let testInvitationData = null;
+      let committeeAssignment = null;
 
-      if (eligibilityResult.isEligible) {
+      if (eligibilityResult.isEligible && requiresBasicSkillsTest) {
         testInvitationData = await createBasicSkillsTestInvitation(tx, createdApplicant);
 
         await tx.applicantStatusHistory.create({
@@ -1463,6 +1478,28 @@ async function submitRegistration(req, res) {
             applicantId: createdApplicant.id,
             status: finalStatus,
             note: "Basic IT skills test invitation created. The invitation link is tied to this applicant record.",
+          },
+        });
+      }
+
+      if (
+        eligibilityResult.isEligible &&
+        pathway === "DIGITAL_ENTREPRENEURSHIP"
+      ) {
+        committeeAssignment = await assignApplicantToLeastLoadedMember({
+          applicantId: createdApplicant.id,
+          tx,
+          assignedByType: "SYSTEM",
+          reason: "Digital Entrepreneurship application moved directly to committee review because this pathway does not require the Basic IT skills test.",
+        });
+
+        await tx.applicantStatusHistory.create({
+          data: {
+            applicantId: createdApplicant.id,
+            status: finalStatus,
+            note: committeeAssignment
+              ? "Digital Entrepreneurship application is ready for committee review and was assigned automatically."
+              : "Digital Entrepreneurship application is ready for committee review. No active committee member was available for automatic assignment.",
           },
         });
       }
@@ -1494,11 +1531,13 @@ async function submitRegistration(req, res) {
       return {
         applicant: createdApplicant,
         testInvitationData,
+        committeeAssignment,
       };
     });
 
     const applicant = registrationResult.applicant;
     const testInvitationData = registrationResult.testInvitationData;
+    const committeeAssignment = registrationResult.committeeAssignment;
 
     let testInvitationEmailResult = null;
 
@@ -1580,7 +1619,7 @@ async function submitRegistration(req, res) {
       eligibilityReasonCodes: canTrackApplication ? applicant.eligibilityReasonCodes : [],
       eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
       documentsUploaded: uploadedDocuments.length,
-      requiresBasicSkillsTest: applicant.isEligible,
+      requiresBasicSkillsTest: applicant.isEligible && pathwayRequiresBasicSkillsTest(applicant.pathway),
       skillsTestUrl: null,
       skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
       testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
@@ -1589,10 +1628,15 @@ async function submitRegistration(req, res) {
         applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
           ? testInvitationEmailResult?.sent
             ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-            : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so use the local testing link while SMTP is being configured."
-          : applicant.status === "PENDING_REVIEW"
-            ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
-            : applicantEligibilityMessage,
+            : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so the programme team can resend the invitation once email is configured."
+          : applicant.pathway === "DIGITAL_ENTREPRENEURSHIP" &&
+              applicant.screeningStatus === "ELIGIBLE"
+            ? committeeAssignment
+              ? "Your application passed the initial checks and has moved directly to committee review. The Basic IT skills test is not required for Digital Entrepreneurship."
+              : "Your application passed the initial checks and is ready for committee review. The Basic IT skills test is not required for Digital Entrepreneurship."
+            : applicant.status === "PENDING_REVIEW"
+              ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
+              : applicantEligibilityMessage,
 
       // New tracking fields.
       personUid: canTrackApplication ? applicant.id : null,
@@ -1620,7 +1664,7 @@ async function submitRegistration(req, res) {
         eligibilityReasonCodes: canTrackApplication ? applicant.eligibilityReasonCodes : [],
         eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
         documentsUploaded: uploadedDocuments.length,
-        requiresBasicSkillsTest: applicant.isEligible,
+        requiresBasicSkillsTest: applicant.isEligible && pathwayRequiresBasicSkillsTest(applicant.pathway),
         skillsTestUrl: null,
         skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
         testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
@@ -1629,10 +1673,15 @@ async function submitRegistration(req, res) {
           applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
             ? testInvitationEmailResult?.sent
               ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-              : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so use the local testing link while SMTP is being configured."
-            : applicant.status === "PENDING_REVIEW"
-              ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
-              : applicantEligibilityMessage,
+              : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so the programme team can resend the invitation once email is configured."
+            : applicant.pathway === "DIGITAL_ENTREPRENEURSHIP" &&
+                applicant.screeningStatus === "ELIGIBLE"
+              ? committeeAssignment
+                ? "Your application passed the initial checks and has moved directly to committee review. The Basic IT skills test is not required for Digital Entrepreneurship."
+                : "Your application passed the initial checks and is ready for committee review. The Basic IT skills test is not required for Digital Entrepreneurship."
+              : applicant.status === "PENDING_REVIEW"
+                ? "Your application needs an internal data review because the initial eligibility check could not be completed automatically."
+                : applicantEligibilityMessage,
         submittedAt: applicant.createdAt,
         contactNumber: applicant.contactNumber,
       },
@@ -1766,7 +1815,15 @@ async function getApplicantById(req, res) {
 }
 
 
-function getNextStepMessage(status) {
+function getNextStepMessage(status, pathway, screeningStatus) {
+  if (
+    status === "PENDING_REVIEW" &&
+    pathway === "DIGITAL_ENTREPRENEURSHIP" &&
+    screeningStatus === "ELIGIBLE"
+  ) {
+    return "Your application passed the initial checks and is ready for committee review. The Basic IT skills test is not required for Digital Entrepreneurship.";
+  }
+
   const messages = {
     SUBMITTED:
       "Your application has been received and is waiting for eligibility review.",
@@ -1912,7 +1969,9 @@ async function getRegistrationStatus(req, res) {
         lookupMethod,
         dhis2Synced: Boolean(applicant.dhis2TrackedEntityId),
         requiresBasicSkillsTest:
-          applicant.isEligible && applicant.skillsTestAttempts.length === 0,
+          applicant.isEligible &&
+          pathwayRequiresBasicSkillsTest(applicant.pathway) &&
+          applicant.skillsTestAttempts.length === 0,
         testInvitation: applicant.skillsTestInvitations?.[0]
           ? {
               status: applicant.skillsTestInvitations[0].status,
@@ -1939,7 +1998,7 @@ async function getRegistrationStatus(req, res) {
           note: item.note,
           date: item.createdAt,
         })),
-        nextStepMessage: getNextStepMessage(applicant.status),
+        nextStepMessage: getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus),
       },
     });
   } catch (error) {
