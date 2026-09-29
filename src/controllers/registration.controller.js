@@ -1,6 +1,10 @@
 const prisma = require("../config/prisma");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
+const {
+  getApplicationQuestionsForPathway,
+  getApplicationFormVersion,
+} = registrationFormQuestions;
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -239,10 +243,10 @@ function isNonNegativeNumber(value) {
   return Number.isFinite(numberValue) && numberValue >= 0;
 }
 
-function validateQuestionFormats(responses = []) {
+function validateQuestionFormats(responses = [], questions = registrationFormQuestions) {
   const invalidQuestions = [];
 
-  for (const question of registrationFormQuestions) {
+  for (const question of questions) {
     if (!isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
@@ -330,10 +334,10 @@ function validateQuestionFormats(responses = []) {
   return invalidQuestions;
 }
 
-function validateRequiredQuestions(responses = []) {
+function validateRequiredQuestions(responses = [], questions = registrationFormQuestions) {
   const missingQuestions = [];
 
-  for (const question of registrationFormQuestions) {
+  for (const question of questions) {
     if (!question.required || !isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
@@ -419,9 +423,10 @@ function buildResponsesFromAnswerObject(answers = {}) {
   }));
 }
 
-function calculateDraftCompletionPercent(answers = {}) {
+function calculateDraftCompletionPercent(answers = {}, pathway = "PHYSICAL_ACADEMY") {
   const draftResponses = buildResponsesFromAnswerObject(answers);
-  const visibleQuestions = registrationFormQuestions.filter((question) =>
+  const pathwayQuestions = getApplicationQuestionsForPathway(pathway);
+  const visibleQuestions = pathwayQuestions.filter((question) =>
     isQuestionVisible(question, draftResponses)
   );
   const requiredQuestions = visibleQuestions.filter((question) => question.required);
