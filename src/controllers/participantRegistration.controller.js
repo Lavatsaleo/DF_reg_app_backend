@@ -464,7 +464,11 @@ async function saveParticipantRegistrationSupportRequest(req, res) {
       });
     });
 
-    const supportEmail = String(process.env.PARTICIPANT_REGISTRATION_SUPPORT_EMAIL || "").trim();
+    const supportEmail = String(
+      process.env.PARTICIPANT_REGISTRATION_SUPPORT_EMAIL ||
+      process.env.SMTP_FROM_EMAIL ||
+      ""
+    ).trim();
 
     if (supportEmail) {
       await sendEmail({
