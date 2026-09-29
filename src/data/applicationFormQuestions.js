@@ -158,7 +158,7 @@ function setupQuestions(pathway) {
   ];
 }
 
-function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, townNumber, section }) {
+function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, townNumber, section, countryHelp }) {
   return [
     {
       questionNumber: countryNumber,
@@ -168,7 +168,7 @@ function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, town
       responseType: "SINGLE_SELECT",
       required: true,
       options: COUNTRIES,
-      helpText: "Drives the country-specific formats used later in this section.",
+      helpText: countryHelp || "",
       metadata: { dialCodes: COUNTRY_DIAL_CODES, locationHierarchy: LOCATION_HIERARCHY },
     },
     {
@@ -314,7 +314,7 @@ function identityQuestions({
         maxEligibleAge: ageMax,
         ageOutOfRangeAction: "review",
       },
-      helpText: `Eligibility: 18–${ageMax} years, unless programme rules specify otherwise. Flag out-of-range applicants for review.`,
+      helpText: ageMax === 45\n        ? "Eligibility: 18–45years, unless programme rules specify otherwise. Flag out-of-range applicants for review."\n        : "Eligibility: 18–35 years, unless programme rules specify otherwise. Flag out-of-range applicants for review.",
     },
     {
       questionNumber: nationalIdNumber,
@@ -324,7 +324,7 @@ function identityQuestions({
       responseType: "TEXT",
       required: true,
       validationType: "IDENTIFICATION",
-      helpText: `Text/number entry only; a supporting document upload is not yet confirmed for this field (pending country-team decision). ${NATIONAL_ID_HELP}`,
+      helpText: `Text/number entry only  a supporting document upload is not yet confirmed for this field (pending country-team decision). ${NATIONAL_ID_HELP}`,
       showIf: { questionCode: "COUNTRY", operator: "in", value: ["Kenya", "Nigeria", "Zambia"] },
     },
     {
@@ -560,6 +560,7 @@ const physicalQuestions = [
     levelTwoNumber: 5,
     townNumber: 6,
     section: PERSONAL_SECTION,
+    countryHelp: "Ask all. Drives the country-specific formats used at Qs 12 - 16.",
   }).map((question, index) => ({
     ...question,
     metadata: {
@@ -813,6 +814,7 @@ const digitalEntrepreneurshipQuestions = [
     levelTwoNumber: 12,
     townNumber: 13,
     section: ENTREPRENEUR_PERSONAL_SECTION,
+    countryHelp: "Ask all. Drives the country-specific formats used at Q19, Q22 and Q23.",
   }).map((question, index) => ({
     ...question,
     metadata: {
