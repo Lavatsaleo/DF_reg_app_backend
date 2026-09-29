@@ -10,6 +10,11 @@ const {
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
 const { hashPassword } = require("../utils/passwordUtils");
 const {
+  pathwaySupportsParticipantRegistration,
+  createParticipantRegistrationInvitation,
+  sendParticipantRegistrationInvitation,
+} = require("../services/participantRegistrationInvitation.service");
+const {
   COUNTRIES,
   normalizeCountry,
   isSuperAdmin,
@@ -1220,7 +1225,15 @@ async function submitCommitteeReview(req, res) {
         throw err;
       }
 
-      const applicantStatus = DECISION_TO_APPLICANT_STATUS[decision] || "UNDER_REVIEW";
+      let applicantStatus = DECISION_TO_APPLICANT_STATUS[decision] || "UNDER_REVIEW";
+
+      if (
+        decision === "SELECTED" &&
+        pathwaySupportsParticipantRegistration(assignment.applicant.pathway)
+      ) {
+        applicantStatus = "PARTICIPANT_REGISTRATION_PENDING";
+      }
+
       const review = await tx.committeeReview.create({
         data: {
           assignmentId: assignment.id,
@@ -1258,8 +1271,41 @@ async function submitCommitteeReview(req, res) {
         },
       });
 
-      return review;
+      let participantRegistrationInvitationData = null;
+
+      if (
+        decision === "SELECTED" &&
+        pathwaySupportsParticipantRegistration(assignment.applicant.pathway) &&
+        assignment.applicant.email
+      ) {
+        participantRegistrationInvitationData =
+          await createParticipantRegistrationInvitation(tx, assignment.applicant);
+
+        await tx.applicantStatusHistory.create({
+          data: {
+            applicantId: assignment.applicantId,
+            status: "PARTICIPANT_REGISTRATION_PENDING",
+            note: "Participant Registration & Baseline Survey invitation created for email delivery.",
+          },
+        });
+      }
+
+      return {
+        review,
+        applicant: assignment.applicant,
+        participantRegistrationInvitationData,
+      };
     });
+
+    let participantRegistrationEmailResult = null;
+
+    if (result.participantRegistrationInvitationData?.invitation) {
+      participantRegistrationEmailResult = await sendParticipantRegistrationInvitation(
+        result.applicant,
+        result.participantRegistrationInvitationData.invitation,
+        result.participantRegistrationInvitationData.invitationUrl
+      );
+    }
 
     const updatedAssignment = await prisma.committeeAssignment.findUnique({
       where: { id: assignmentId },
@@ -1268,8 +1314,24 @@ async function submitCommitteeReview(req, res) {
 
     return res.status(201).json({
       success: true,
-      message: "Committee review decision saved successfully.",
-      review: result,
+      message:
+        result.participantRegistrationInvitationData?.invitation
+          ? participantRegistrationEmailResult?.sent
+            ? "Committee review decision saved. The participant registration invitation was sent by email."
+            : "Committee review decision saved. The participant registration invitation was created, but email delivery needs follow-up."
+          : "Committee review decision saved successfully.",
+      review: result.review,
+      participantRegistrationInvitation:
+        result.participantRegistrationInvitationData?.invitation
+          ? {
+              status:
+                participantRegistrationEmailResult?.status ||
+                result.participantRegistrationInvitationData.invitation.status,
+              expiresAt:
+                result.participantRegistrationInvitationData.invitation.expiresAt,
+              emailSent: Boolean(participantRegistrationEmailResult?.sent),
+            }
+          : null,
       assignment: summarizeAssignment(updatedAssignment, req.user),
     });
   } catch (error) {
