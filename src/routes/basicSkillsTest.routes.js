@@ -1,4 +1,5 @@
 const express = require("express");
+const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const {
   getBasicSkillsTestQuestions,
   getInvitationBasicSkillsTestQuestions,
@@ -14,7 +15,12 @@ router.get("/invite/:token/questions", getInvitationBasicSkillsTestQuestions);
 router.post("/invite/:token/submit", submitInvitationBasicSkillsTest);
 
 // Admin/local helper: resend or create a new invitation after eligibility screening.
-router.post("/invitations/:reference/send", sendBasicSkillsTestInvitationForApplicant);
+router.post(
+  "/invitations/:reference/send",
+  requireAuth,
+  requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"),
+  sendBasicSkillsTestInvitationForApplicant
+);
 
 // Backward-compatible/local testing routes using the public application reference.
 router.get("/:reference/questions", getBasicSkillsTestQuestions);
