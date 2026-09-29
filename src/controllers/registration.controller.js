@@ -1737,6 +1737,11 @@ async function getApplicants(req, res) {
             createdAt: "desc",
           },
         },
+        participantRegistrationInvitations: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
       },
     });
 
@@ -1780,6 +1785,11 @@ async function getApplicantById(req, res) {
           },
         },
         skillsTestInvitations: {
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+        participantRegistrationInvitations: {
           orderBy: {
             createdAt: "desc",
           },
@@ -1839,6 +1849,10 @@ function getNextStepMessage(status, pathway, screeningStatus) {
       "Your application is currently being reviewed by the project team.",
     APPROVED_FOR_ENROLLMENT:
       "Your application has been approved for programme enrollment.",
+    PARTICIPANT_REGISTRATION_PENDING:
+      "You have been selected. Please check your email for the secure Participant Registration & Baseline Survey link.",
+    PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION:
+      "Your Participant Registration & Baseline Survey has been submitted and is pending verification by the programme team.",
     REJECTED_BY_REVIEW_COMMITTEE:
       "Your application was reviewed but was not approved for enrollment.",
     ENROLLED_IN_DHIS2_PROGRAM:
@@ -1978,6 +1992,18 @@ async function getRegistrationStatus(req, res) {
               usedAt: applicant.skillsTestInvitations[0].usedAt,
             }
           : null,
+        participantRegistrationInvitation:
+          applicant.participantRegistrationInvitations?.[0]
+            ? {
+                status: applicant.participantRegistrationInvitations[0].status,
+                emailTo: applicant.participantRegistrationInvitations[0].emailTo,
+                sentAt: applicant.participantRegistrationInvitations[0].sentAt,
+                expiresAt: applicant.participantRegistrationInvitations[0].expiresAt,
+                openedAt: applicant.participantRegistrationInvitations[0].openedAt,
+                submittedAt: applicant.participantRegistrationInvitations[0].submittedAt,
+                formVersion: applicant.participantRegistrationInvitations[0].formVersion,
+              }
+            : null,
         skillsTest: applicant.skillsTestAttempts[0]
           ? {
               submitted: true,
