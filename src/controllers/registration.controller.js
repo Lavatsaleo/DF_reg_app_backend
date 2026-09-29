@@ -1620,8 +1620,6 @@ async function submitRegistration(req, res) {
       eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
       documentsUploaded: uploadedDocuments.length,
       requiresBasicSkillsTest: applicant.isEligible && pathwayRequiresBasicSkillsTest(applicant.pathway),
-      skillsTestUrl: null,
-      skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
       testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
       testInvitationEmailStatus: testInvitationEmailResult?.status || null,
       nextStepMessage:
@@ -1665,9 +1663,7 @@ async function submitRegistration(req, res) {
         eligibilityDetails: canTrackApplication ? applicant.eligibilityDetails : null,
         documentsUploaded: uploadedDocuments.length,
         requiresBasicSkillsTest: applicant.isEligible && pathwayRequiresBasicSkillsTest(applicant.pathway),
-        skillsTestUrl: null,
-        skillsTestInviteUrl: testInvitationData?.invitationUrl || null,
-        testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
+            testInvitationEmailSent: Boolean(testInvitationEmailResult?.sent),
         testInvitationEmailStatus: testInvitationEmailResult?.status || null,
         nextStepMessage:
           applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"

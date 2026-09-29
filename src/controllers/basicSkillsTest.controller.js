@@ -687,7 +687,6 @@ async function sendBasicSkillsTestInvitationForApplicant(req, res) {
         : "Basic IT skills test invitation created. Email was not sent because SMTP is not configured or failed.",
       applicant: buildApplicantSummary(applicant),
       invitation: summarizeInvitation(invitationResult.invitation),
-      invitationUrl: invitationResult.invitationUrl,
       emailResult: invitationResult.emailResult,
     });
   } catch (error) {
