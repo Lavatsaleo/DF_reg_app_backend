@@ -295,6 +295,8 @@ function summarizeSelectedParticipantReportRow(applicant, user) {
 
   const review = getMostRelevantSelectionReview(applicant);
   const assignment = applicant?.committeeAssignments?.[0] || null;
+  const participantRegistrationInvitation =
+    applicant?.participantRegistrationInvitations?.[0] || null;
   const districtLevel = applicant.district || applicant.subCounty || null;
   const firstAdminLevel = applicant.county || applicant.state || applicant.region || null;
 
@@ -352,7 +354,30 @@ function summarizeSelectedParticipantReportRow(applicant, user) {
         }
       : null,
     skillsTest: summarizeSkillsTest(applicant),
-    verificationStatus: "Pending verification",
+    participantRegistration:
+      pathwaySupportsParticipantRegistration(applicant.pathway)
+        ? {
+            applicable: true,
+            status:
+              applicant.status === "PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION"
+                ? "SUBMITTED"
+                : participantRegistrationInvitation?.status || "NOT_SENT",
+            sentAt: participantRegistrationInvitation?.sentAt || null,
+            openedAt: participantRegistrationInvitation?.openedAt || null,
+            submittedAt: participantRegistrationInvitation?.submittedAt || null,
+            expiresAt: participantRegistrationInvitation?.expiresAt || null,
+            formVersion: participantRegistrationInvitation?.formVersion || null,
+          }
+        : {
+            applicable: false,
+            status: "NOT_APPLICABLE",
+          },
+    verificationStatus:
+      applicant.status === "PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION"
+        ? "Registration submitted - pending verification"
+        : pathwaySupportsParticipantRegistration(applicant.pathway)
+          ? "Awaiting participant registration"
+          : "Pending verification",
     createdAt: applicant.createdAt,
     updatedAt: applicant.updatedAt,
   };
@@ -1395,6 +1420,10 @@ async function listSelectedParticipantsReport(req, res) {
             committeeMember: true,
             review: true,
           },
+          take: 1,
+        },
+        participantRegistrationInvitations: {
+          orderBy: { createdAt: "desc" },
           take: 1,
         },
       },
