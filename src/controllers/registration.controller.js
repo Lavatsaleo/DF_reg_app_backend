@@ -38,8 +38,8 @@ function toBoolean(value) {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
 
-    if (["true", "yes", "y", "1"].includes(normalized) || normalized.startsWith("yes -")) return true;
-    if (["false", "no", "n", "0"].includes(normalized) || normalized.startsWith("no -")) return false;
+    if (["true", "yes", "y", "1"].includes(normalized) || normalized.startsWith("yes")) return true;
+    if (["false", "no", "n", "0"].includes(normalized) || normalized.startsWith("no")) return false;
   }
 
   return null;
@@ -528,7 +528,12 @@ function buildDraftPublicPayload(draft, { includeAnswers = false } = {}) {
     participantCode: null,
     status: draft.status || "INCOMPLETE",
     pathway: draft.pathway,
-    registrationMode: draft.pathway === "PHYSICAL_ACADEMY" ? "PHYSICAL" : "UNKNOWN",
+    registrationMode:
+      draft.pathway === "PHYSICAL_ACADEMY"
+        ? "PHYSICAL"
+        : ["VIRTUAL_ACADEMY", "DIGITAL_ENTREPRENEURSHIP"].includes(draft.pathway)
+          ? "VIRTUAL"
+          : "UNKNOWN",
     contactNumber: draft.contactNumber,
     email: draft.email,
     documentType: draft.documentType || "DISABILITY_DOCUMENT",
