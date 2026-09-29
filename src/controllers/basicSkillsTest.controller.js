@@ -130,7 +130,16 @@ function validateApplicantCanTakeTest(applicant) {
       allowed: false,
       statusCode: 403,
       message:
-        "The basic IT skills test is only available after an applicant has passed the initial eligibility check.",
+        "The Basic IT skills test is only available after an applicant has passed the initial eligibility check.",
+    };
+  }
+
+  if (!["PHYSICAL_ACADEMY", "VIRTUAL_ACADEMY"].includes(applicant.pathway)) {
+    return {
+      allowed: false,
+      statusCode: 403,
+      message:
+        "The Basic IT skills test is only required for Physical Academy and Virtual Academy applicants.",
     };
   }
 
