@@ -8,6 +8,7 @@ const basicSkillsTestRoutes = require("./routes/basicSkillsTest.routes");
 const committeeRoutes = require("./routes/committee.routes");
 const authRoutes = require("./routes/auth.routes");
 const consentRoutes = require("./routes/consent.routes");
+const participantRegistrationRoutes = require("./routes/participantRegistration.routes");
 
 const app = express();
 
@@ -23,6 +24,7 @@ app.use("/api/basic-skills-test", basicSkillsTestRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/committee", committeeRoutes);
 app.use("/api/consents", consentRoutes);
+app.use("/api/participant-registration", participantRegistrationRoutes);
 
 app.use((req, res) => {
   res.status(404).json({
