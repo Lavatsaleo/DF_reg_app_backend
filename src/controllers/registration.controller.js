@@ -1357,13 +1357,15 @@ async function submitRegistration(req, res) {
             getAnswerValue(parsedResponses, "ACCESSIBILITY_NEEDS")
           ),
 
-          canParticipateOnline: toBoolean(
-            getAnswerValue(parsedResponses, "CAN_PARTICIPATE_ONLINE")
-          ),
+          canParticipateOnline:
+            getAnswerValue(parsedResponses, "INTERNET_ACCESS") !== undefined
+              ? String(getAnswerValue(parsedResponses, "INTERNET_ACCESS") || "").trim() === "Yes"
+              : null,
 
-          hasDeviceAccess: toBoolean(
-            getAnswerValue(parsedResponses, "HAS_DEVICE_ACCESS")
-          ),
+          hasDeviceAccess:
+            getAnswerValue(parsedResponses, "DEVICE_ACCESS") !== undefined
+              ? String(getAnswerValue(parsedResponses, "DEVICE_ACCESS") || "").trim() !== "None of the above"
+              : null,
 
           heardAboutProject: answerToText(
             getAnswerValue(parsedResponses, "HEARD_ABOUT_PROJECT")
@@ -1405,6 +1407,14 @@ async function submitRegistration(req, res) {
 
           registrationMode,
           pathway,
+          formName:
+            pathway === "PHYSICAL_ACADEMY"
+              ? "Participant Application Form - Physical Academy"
+              : pathway === "VIRTUAL_ACADEMY"
+                ? "Participant Application Form - Virtual Academy"
+                : pathway === "DIGITAL_ENTREPRENEURSHIP"
+                  ? "Participant Application Form - Digital Entrepreneurship"
+                  : "Participant Application Form",
           formVersion: getApplicationFormVersion(pathway),
 
           isEligible: eligibilityResult.isEligible,
