@@ -2,7 +2,6 @@ const express = require("express");
 const upload = require("../middleware/upload.middleware");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const { requireApplicationConsent } = require("../middleware/consent.middleware");
-const { validateVirtualApplication } = require("../middleware/virtualApplication.middleware");
 
 const {
   submitRegistration,
@@ -27,7 +26,6 @@ router.post(
   "/",
   upload.array("documents", 10),
   requireApplicationConsent,
-  validateVirtualApplication,
   submitRegistration
 );
 

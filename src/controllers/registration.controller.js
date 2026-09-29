@@ -1,6 +1,10 @@
 const prisma = require("../config/prisma");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
+const {
+  getApplicationQuestionsForPathway,
+  getApplicationFormVersion,
+} = registrationFormQuestions;
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -34,8 +38,8 @@ function toBoolean(value) {
   if (typeof value === "string") {
     const normalized = value.trim().toLowerCase();
 
-    if (["true", "yes", "y", "1"].includes(normalized) || normalized.startsWith("yes -")) return true;
-    if (["false", "no", "n", "0"].includes(normalized) || normalized.startsWith("no -")) return false;
+    if (["true", "yes", "y", "1"].includes(normalized) || normalized.startsWith("yes")) return true;
+    if (["false", "no", "n", "0"].includes(normalized) || normalized.startsWith("no")) return false;
   }
 
   return null;
@@ -202,6 +206,44 @@ function isValidPhoneDigits(value) {
   return /^\d{7,15}$/.test(String(value || "").trim());
 }
 
+function isValidCountryPhone(value, country) {
+  const digits = String(value || "").replace(/\D/g, "");
+  const rules = {
+    Kenya: [/^(?:01|07)\d{8}$/, /^254(?:1|7)\d{8}$/],
+    Nigeria: [/^(?:070|080|081|090|091)\d{8}$/, /^234(?:70|80|81|90|91)\d{8}$/],
+    Zambia: [/^09\d{8}$/, /^2609\d{8}$/],
+    Ghana: [/^(?:02|03|05)\d{8}$/, /^233(?:2|3|5)\d{8}$/],
+  };
+  const patterns = rules[String(country || "").trim()];
+  if (!patterns) return isValidPhoneDigits(digits);
+  return patterns.some((pattern) => pattern.test(digits));
+}
+
+function isValidIdentification(value) {
+  const clean = String(value || "").trim();
+  return clean.length >= 3 && /^[\p{L}\p{N}\s/_.()+#&-]+$/u.test(clean);
+}
+
+function isValidCardIdentification(value, responses = []) {
+  const clean = String(value || "").trim();
+  const country = getAnswerValue(responses, "COUNTRY");
+  const idType = String(getAnswerValue(responses, "NATIONAL_ID_TYPE") || "");
+
+  if (country === "Ghana" && idType.startsWith("Ghana Card")) {
+    return /^GHA-[A-Za-z0-9-]{11}$/.test(clean) && clean.length === 15;
+  }
+
+  if (country === "Nigeria" && idType.includes("National Identification Number")) {
+    return /^\d{11}$/.test(clean);
+  }
+
+  return isValidIdentification(clean);
+}
+
+function countWords(value) {
+  return String(value || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
 function isValidYear(value) {
   const year = Number(value);
   const currentYear = new Date().getFullYear();
@@ -239,10 +281,10 @@ function isNonNegativeNumber(value) {
   return Number.isFinite(numberValue) && numberValue >= 0;
 }
 
-function validateQuestionFormats(responses = []) {
+function validateQuestionFormats(responses = [], questions = registrationFormQuestions) {
   const invalidQuestions = [];
 
-  for (const question of registrationFormQuestions) {
+  for (const question of questions) {
     if (!isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
@@ -275,6 +317,41 @@ function validateQuestionFormats(responses = []) {
         questionCode: question.questionCode,
         questionText: question.questionText,
         message: `${question.questionText} must contain numbers only and must be 7 to 15 digits long.`,
+      });
+    }
+
+    if (question.validationType === "COUNTRY_PHONE") {
+      const country = getAnswerValue(responses, "COUNTRY");
+      if (!isValidCountryPhone(answer, country)) {
+        invalidQuestions.push({
+          questionCode: question.questionCode,
+          questionText: question.questionText,
+          message: `${question.questionText} does not match the phone-number format stated for ${country || "the selected country"}.`,
+        });
+      }
+    }
+
+    if (question.validationType === "IDENTIFICATION" && !isValidIdentification(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must contain a valid identification number.`,
+      });
+    }
+
+    if (question.validationType === "CARD_IDENTIFICATION" && !isValidCardIdentification(answer, responses)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} does not match the identification format stated in the application form.`,
+      });
+    }
+
+    if (question.metadata?.maxWords && countWords(answer) > Number(question.metadata.maxWords)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be no more than ${question.metadata.maxWords} words.`,
       });
     }
 
@@ -330,10 +407,10 @@ function validateQuestionFormats(responses = []) {
   return invalidQuestions;
 }
 
-function validateRequiredQuestions(responses = []) {
+function validateRequiredQuestions(responses = [], questions = registrationFormQuestions) {
   const missingQuestions = [];
 
-  for (const question of registrationFormQuestions) {
+  for (const question of questions) {
     if (!question.required || !isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
@@ -419,9 +496,10 @@ function buildResponsesFromAnswerObject(answers = {}) {
   }));
 }
 
-function calculateDraftCompletionPercent(answers = {}) {
+function calculateDraftCompletionPercent(answers = {}, pathway = "PHYSICAL_ACADEMY") {
   const draftResponses = buildResponsesFromAnswerObject(answers);
-  const visibleQuestions = registrationFormQuestions.filter((question) =>
+  const pathwayQuestions = getApplicationQuestionsForPathway(pathway);
+  const visibleQuestions = pathwayQuestions.filter((question) =>
     isQuestionVisible(question, draftResponses)
   );
   const requiredQuestions = visibleQuestions.filter((question) => question.required);
@@ -450,7 +528,12 @@ function buildDraftPublicPayload(draft, { includeAnswers = false } = {}) {
     participantCode: null,
     status: draft.status || "INCOMPLETE",
     pathway: draft.pathway,
-    registrationMode: draft.pathway === "PHYSICAL_ACADEMY" ? "PHYSICAL" : "UNKNOWN",
+    registrationMode:
+      draft.pathway === "PHYSICAL_ACADEMY"
+        ? "PHYSICAL"
+        : ["VIRTUAL_ACADEMY", "DIGITAL_ENTREPRENEURSHIP"].includes(draft.pathway)
+          ? "VIRTUAL"
+          : "UNKNOWN",
     contactNumber: draft.contactNumber,
     email: draft.email,
     documentType: draft.documentType || "DISABILITY_DOCUMENT",
@@ -510,59 +593,37 @@ async function findIncompleteDraftByIdentifier(identifier) {
   return null;
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FORM_V5_PHYSICAL_BACHELOR";
-const REGISTRATION_FORM_VERSION = "3.1";
-const MIN_ELIGIBLE_AGE = Number(process.env.MIN_ELIGIBLE_AGE || 18);
-const MAX_ELIGIBLE_AGE = Number(process.env.MAX_ELIGIBLE_AGE || 33);
+const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FINAL_APPLICATION_V4";
+const MIN_ELIGIBLE_AGE = 18;
+const MAX_ELIGIBLE_AGE = 45;
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
 
-const PHYSICAL_ACADEMY_BACHELOR_OR_HIGHER_LEVELS = new Set([
-  "first degree",
-  "post graduate",
-  "postgraduate",
-  "bachelor",
-  "bachelor degree",
-  "bachelor's degree",
-  "bachelors degree",
-  "undergraduate degree",
-]);
+function getAgeRangeForPathway(pathway) {
+  const normalizedPathway = normalizePathway(pathway);
+  return {
+    min: 18,
+    max: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? 45 : 35,
+  };
+}
 
 const PUBLIC_ELIGIBILITY_FEEDBACK = {
-  UNDER_AGE: () =>
-    `The programme is currently open to applicants who are between ${MIN_ELIGIBLE_AGE} and ${MAX_ELIGIBLE_AGE} years old at the time of application.`,
-  OVER_AGE: () =>
-    `The programme is currently open to applicants who are between ${MIN_ELIGIBLE_AGE} and ${MAX_ELIGIBLE_AGE} years old at the time of application.`,
-  NO_DISABILITY: () =>
-    "This programme pathway is currently designed for applicants who identify as persons with disabilities.",
   MISSING_AGE_INFORMATION: () =>
     "We could not confirm your age from the information provided, so the application needs a manual check.",
   AGE_DATA_OUTLIER: () =>
     "We could not validate the age information provided, so the application needs a manual check.",
-  AGE_NEEDS_MANUAL_REVIEW: () =>
-    "Your year of birth places you near the programme age cut-off, so the project team will review this manually.",
-  DISABILITY_STATUS_UNCONFIRMED: () =>
-    "We could not confirm the disability information provided, so the application needs a manual check.",
-  DISABILITY_REGISTRATION_STATUS_MISSING: () =>
-    "The disability registration information will be checked later by the review committee.",
-  DISABILITY_REGISTRATION_STATUS_UNCONFIRMED: () =>
-    "The disability registration information will be reviewed later by the project team.",
-  UNREGISTERED_PWD_REQUIRES_DOCUMENT_REVIEW: () =>
-    "Because you indicated that you are not formally registered as a person with disability, the supporting information will be reviewed later by the committee.",
-  DISABILITY_STATUS_CONFLICT: () =>
-    "The disability answers provided appear to conflict, so the project team needs to review the application before the next step.",
-  PHYSICAL_ACADEMY_BACHELOR_REQUIRED: () =>
-    "The Physical Academy pathway is currently open only to applicants who have completed at least a Bachelor’s degree.",
-  PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED: () =>
-    "The Physical Academy pathway requires applicants to be available for the full training period.",
+  AGE_OUTSIDE_REVIEW_RANGE: ({ min, max }) =>
+    `The application form states an age range of ${min}–${max} years. Your application has been saved and flagged for programme review.`,
+  ENTREPRENEURSHIP_AVAILABILITY_REQUIRED: () =>
+    "The Digital Entrepreneurship application requires availability for an average of 5 hours per week for a minimum period of 3 months.",
 };
 
-function buildPublicEligibilityFeedback(reasonCodes = []) {
+function buildPublicEligibilityFeedback(reasonCodes = [], context = {}) {
   const feedback = [];
 
   for (const code of reasonCodes || []) {
     const messageFactory = PUBLIC_ELIGIBILITY_FEEDBACK[code];
-    const message = typeof messageFactory === "function" ? messageFactory() : null;
+    const message = typeof messageFactory === "function" ? messageFactory(context) : null;
 
     if (message && !feedback.includes(message)) {
       feedback.push(message);
@@ -575,21 +636,21 @@ function buildPublicEligibilityFeedback(reasonCodes = []) {
 function buildApplicantEligibilityMessage(screeningStatus, feedbackMessages = []) {
   if (screeningStatus === "NOT_ELIGIBLE") {
     if (feedbackMessages.length === 0) {
-      return "Unfortunately, you are not eligible for this programme at this time because the application did not meet the current programme requirements.";
+      return "Unfortunately, this application does not meet an explicit eligibility requirement in the selected application form.";
     }
 
-    return `Unfortunately, you are not eligible for this programme at this time. Reason: ${feedbackMessages.join(" ")}`;
+    return `Unfortunately, this application cannot continue at this time. Reason: ${feedbackMessages.join(" ")}`;
   }
 
   if (screeningStatus === "PENDING_REVIEW") {
     if (feedbackMessages.length === 0) {
-      return "Your application has been received and needs an internal data review because the initial eligibility check could not be completed automatically.";
+      return "Your application has been received and needs a programme review before the next step.";
     }
 
-    return `Your application has been received and needs an internal data review because the initial eligibility check could not be completed automatically. Reason: ${feedbackMessages.join(" ")}`;
+    return `Your application has been received and needs a programme review. ${feedbackMessages.join(" ")}`;
   }
 
-  return "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address.";
+  return "You passed the initial application checks. Please follow the next-step instructions sent by the programme.";
 }
 
 function parseDate(value) {
@@ -617,62 +678,22 @@ function calculateAgeFromDateOfBirth(dateOfBirth, applicationDate = new Date()) 
 function getAgeEvidence(responses = [], applicationDate = new Date()) {
   const dateOfBirth = parseDate(getAnswerValue(responses, "DATE_OF_BIRTH"));
 
-  if (dateOfBirth) {
+  if (!dateOfBirth) {
     return {
-      source: "DATE_OF_BIRTH",
-      dateOfBirth,
-      yearOfBirth: dateOfBirth.getFullYear(),
+      source: null,
+      dateOfBirth: null,
+      yearOfBirth: null,
       approximateAge: null,
-      ageAtApplication: calculateAgeFromDateOfBirth(dateOfBirth, applicationDate),
-      manualReviewRequired: false,
+      ageAtApplication: null,
     };
   }
 
-  const birthYearKnown = toBoolean(getAnswerValue(responses, "BIRTH_YEAR_KNOWN"));
-  const shouldUseYearOfBirth = birthYearKnown === true || birthYearKnown === null;
-  const shouldUseApproximateAge = birthYearKnown === false || birthYearKnown === null;
-
-  if (shouldUseYearOfBirth) {
-    const yearOfBirthAnswer = getAnswerValue(responses, "YEAR_OF_BIRTH");
-    const yearOfBirth = yearOfBirthAnswer ? Number(yearOfBirthAnswer) : null;
-
-    if (Number.isInteger(yearOfBirth)) {
-      const ageFromYearOnly = applicationDate.getFullYear() - yearOfBirth;
-
-      return {
-        source: "YEAR_OF_BIRTH",
-        dateOfBirth: null,
-        yearOfBirth,
-        approximateAge: null,
-        ageAtApplication: ageFromYearOnly,
-        manualReviewRequired: false,
-      };
-    }
-  }
-
-  if (shouldUseApproximateAge) {
-    const approximateAgeAnswer = getAnswerValue(responses, "APPROXIMATE_AGE");
-    const approximateAge = approximateAgeAnswer ? Number(approximateAgeAnswer) : null;
-
-    if (Number.isFinite(approximateAge)) {
-      return {
-        source: "APPROXIMATE_AGE",
-        dateOfBirth: null,
-        yearOfBirth: null,
-        approximateAge,
-        ageAtApplication: approximateAge,
-        manualReviewRequired: false,
-      };
-    }
-  }
-
   return {
-    source: null,
-    dateOfBirth: null,
-    yearOfBirth: null,
+    source: "DATE_OF_BIRTH",
+    dateOfBirth,
+    yearOfBirth: dateOfBirth.getFullYear(),
     approximateAge: null,
-    ageAtApplication: null,
-    manualReviewRequired: false,
+    ageAtApplication: calculateAgeFromDateOfBirth(dateOfBirth, applicationDate),
   };
 }
 
@@ -694,42 +715,7 @@ function answerToNumber(value) {
 }
 
 function hasPreviousSightsaversTraining(responses = []) {
-  const answer = getAnswerValue(responses, "PREVIOUS_SIGHTSAVERS_TRAINING");
-
-  if (!Array.isArray(answer)) return toBoolean(answer);
-
-  const noPreviousTraining = "I have not undertaken training with Sightsavers before";
-  const selectedTraining = answer.filter((item) => item !== noPreviousTraining);
-
-  return selectedTraining.length > 0;
-}
-
-function hasBachelorDegreeOrHigher(responses = []) {
-  const educationLevel = normalizeText(getAnswerValue(responses, "EDUCATION_LEVEL"));
-  const otherEducationLevel = normalizeText(getAnswerValue(responses, "EDUCATION_LEVEL_OTHER"));
-
-  if (PHYSICAL_ACADEMY_BACHELOR_OR_HIGHER_LEVELS.has(educationLevel)) {
-    return true;
-  }
-
-  if (educationLevel.includes("bachelor") || educationLevel.includes("first degree")) {
-    return true;
-  }
-
-  if (educationLevel.includes("postgraduate") || educationLevel.includes("post graduate")) {
-    return true;
-  }
-
-  if (educationLevel === "other") {
-    return (
-      otherEducationLevel.includes("bachelor") ||
-      otherEducationLevel.includes("first degree") ||
-      otherEducationLevel.includes("postgraduate") ||
-      otherEducationLevel.includes("post graduate")
-    );
-  }
-
-  return false;
+  return toBoolean(getAnswerValue(responses, "PREVIOUS_SIGHTSAVERS_TRAINING"));
 }
 
 function buildDignifiedWorkResponse(responses = []) {
@@ -749,27 +735,27 @@ function buildDignifiedWorkResponse(responses = []) {
 }
 
 function buildCurrentBusinessDetails(responses = []) {
-  const businessStartDate = getAnswerValue(responses, "BUSINESS_START_DATE");
-  const currentEmployees = getAnswerValue(responses, "CURRENT_EMPLOYEES");
+  const fields = [
+    "DIGITAL_ENTERPRISE_CHARACTERISTICS",
+    "DIGITAL_ENTERPRISE_TYPE",
+    "DIGITAL_NATIVE_CATEGORY",
+    "DIGITAL_TRANSFORMED_CATEGORY",
+    "BUSINESS_STAGE",
+    "BUSINESS_DESCRIPTION",
+  ];
 
-  if (!businessStartDate && !currentEmployees) return null;
+  const values = fields.reduce((result, code) => {
+    const answer = getAnswerValue(responses, code);
+    if (answer !== undefined && answer !== null && answer !== "") result[code] = answer;
+    return result;
+  }, {});
 
-  return JSON.stringify({
-    businessStartDate: businessStartDate || null,
-    currentEmployees: currentEmployees || null,
-  });
+  return Object.keys(values).length > 0 ? JSON.stringify(values) : null;
 }
 
 function getDisabilityEvidence(responses = []) {
   const hasDisabilityAnswer = getAnswerValue(responses, "HAS_DISABILITY");
-  const booleanValue = toBoolean(hasDisabilityAnswer);
-
-  return {
-    hasDisability: booleanValue,
-    registrationStatus: null,
-    isRegisteredPwd: false,
-    isUnregisteredPwd: false,
-  };
+  return { hasDisability: toBoolean(hasDisabilityAnswer) };
 }
 
 function validateSubmissionConsent(responses = []) {
@@ -787,28 +773,26 @@ function validateSubmissionConsent(responses = []) {
 }
 
 function calculateEligibility(responses = [], applicationDate = new Date(), pathway = "UNKNOWN") {
+  const normalizedPathway = normalizePathway(pathway || getAnswerValue(responses, "COURSE_APPLIED_FOR"));
   const reasonCodes = [];
   const criterionResults = {};
+  const ageRange = getAgeRangeForPathway(normalizedPathway);
   const ageEvidence = getAgeEvidence(responses, applicationDate);
   const disabilityEvidence = getDisabilityEvidence(responses);
-  const normalizedPathway = normalizePathway(pathway || getAnswerValue(responses, "COURSE_APPLIED_FOR"));
-  const educationLevel = getAnswerValue(responses, "EDUCATION_LEVEL");
   const trainingAvailability = toBoolean(getAnswerValue(responses, "TRAINING_AVAILABILITY"));
-  const physicalAcademyRequiresBachelor = normalizedPathway === "PHYSICAL_ACADEMY";
-  const hasRequiredPhysicalAcademyEducation = !physicalAcademyRequiresBachelor || hasBachelorDegreeOrHigher(responses);
-  const physicalAcademyRequiresTrainingAvailability = normalizedPathway === "PHYSICAL_ACADEMY";
-  const hasRequiredPhysicalAcademyTrainingAvailability =
-    !physicalAcademyRequiresTrainingAvailability || trainingAvailability === true;
+
+  const ageWithinRange =
+    ageEvidence.ageAtApplication !== null &&
+    ageEvidence.ageAtApplication >= ageRange.min &&
+    ageEvidence.ageAtApplication <= ageRange.max;
 
   criterionResults.age = {
     source: ageEvidence.source,
     ageAtApplication: ageEvidence.ageAtApplication,
-    minEligibleAge: MIN_ELIGIBLE_AGE,
-    maxEligibleAge: MAX_ELIGIBLE_AGE,
-    passed:
-      ageEvidence.ageAtApplication !== null &&
-      ageEvidence.ageAtApplication >= MIN_ELIGIBLE_AGE &&
-      ageEvidence.ageAtApplication <= MAX_ELIGIBLE_AGE,
+    minEligibleAge: ageRange.min,
+    maxEligibleAge: ageRange.max,
+    withinStatedRange: ageWithinRange,
+    outOfRangeAction: "REVIEW",
   };
 
   if (ageEvidence.ageAtApplication === null) {
@@ -818,68 +802,48 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     ageEvidence.ageAtApplication > MAX_REASONABLE_AGE
   ) {
     reasonCodes.push("AGE_DATA_OUTLIER");
-  } else if (ageEvidence.manualReviewRequired) {
-    reasonCodes.push("AGE_NEEDS_MANUAL_REVIEW");
-  } else if (ageEvidence.ageAtApplication < MIN_ELIGIBLE_AGE) {
-    reasonCodes.push("UNDER_AGE");
-  } else if (ageEvidence.ageAtApplication > MAX_ELIGIBLE_AGE) {
-    reasonCodes.push("OVER_AGE");
+  } else if (!ageWithinRange) {
+    // The final V4 form explicitly says to flag applicants outside the age range for review.
+    reasonCodes.push("AGE_OUTSIDE_REVIEW_RANGE");
   }
 
   criterionResults.disability = {
     hasDisability: disabilityEvidence.hasDisability,
-    registrationStatus: disabilityEvidence.registrationStatus,
-    passed: disabilityEvidence.hasDisability === true,
+    usedForAutomaticExclusion: false,
   };
-
-  if (disabilityEvidence.hasDisability === false) {
-    reasonCodes.push("NO_DISABILITY");
-  } else if (disabilityEvidence.hasDisability === null) {
-    reasonCodes.push("DISABILITY_STATUS_UNCONFIRMED");
-  }
 
   criterionResults.education = {
     pathway: normalizedPathway,
-    educationLevel,
-    requiresBachelorDegreeOrHigher: physicalAcademyRequiresBachelor,
-    passed: hasRequiredPhysicalAcademyEducation,
+    educationLevel: getAnswerValue(responses, "EDUCATION_LEVEL"),
+    usedForAutomaticExclusion: false,
+    note:
+      getAnswerValue(responses, "COUNTRY") === "Nigeria"
+        ? "Final V4 source note: selection starts from HND, BSC & Postgraduate."
+        : null,
   };
-
-  if (!hasRequiredPhysicalAcademyEducation) {
-    reasonCodes.push("PHYSICAL_ACADEMY_BACHELOR_REQUIRED");
-  }
 
   criterionResults.trainingAvailability = {
     pathway: normalizedPathway,
-    availableForFullTrainingPeriod: trainingAvailability,
-    requiredForPhysicalAcademy: physicalAcademyRequiresTrainingAvailability,
-    passed: hasRequiredPhysicalAcademyTrainingAvailability,
+    answer: getAnswerValue(responses, "TRAINING_AVAILABILITY"),
+    available: trainingAvailability,
+    explicitBlockingRule:
+      normalizedPathway === "DIGITAL_ENTREPRENEURSHIP"
+        ? "Applicant must be available on average 5 hours per week for a minimum period of 3 months."
+        : null,
   };
 
-  if (!hasRequiredPhysicalAcademyTrainingAvailability) {
-    reasonCodes.push("PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED");
+  if (normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" && trainingAvailability !== true) {
+    reasonCodes.push("ENTREPRENEURSHIP_AVAILABILITY_REQUIRED");
   }
 
-  // Initial eligibility only decides whether the applicant can proceed to the
-  // Basic IT Skills Test. Document and disability registration evidence is
-  // reviewed later by the committee together with the test result.
-  const blockingReasonCodes = [
-    "UNDER_AGE",
-    "OVER_AGE",
-    "NO_DISABILITY",
-    "PHYSICAL_ACADEMY_BACHELOR_REQUIRED",
-    "PHYSICAL_ACADEMY_TRAINING_AVAILABILITY_REQUIRED",
-  ];
+  const blockingReasonCodes = ["ENTREPRENEURSHIP_AVAILABILITY_REQUIRED"];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
-    "DISABILITY_STATUS_UNCONFIRMED",
-    "DISABILITY_STATUS_CONFLICT",
-    "AGE_NEEDS_MANUAL_REVIEW",
+    "AGE_OUTSIDE_REVIEW_RANGE",
   ];
 
   let screeningStatus = "ELIGIBLE";
-
   if (reasonCodes.some((code) => blockingReasonCodes.includes(code))) {
     screeningStatus = "NOT_ELIGIBLE";
   } else if (reasonCodes.some((code) => pendingReasonCodes.includes(code))) {
@@ -887,16 +851,16 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   }
 
   const isEligible = screeningStatus === "ELIGIBLE";
-  const publicFeedback = buildPublicEligibilityFeedback(reasonCodes);
+  const publicFeedback = buildPublicEligibilityFeedback(reasonCodes, ageRange);
   const applicantMessage = buildApplicantEligibilityMessage(screeningStatus, publicFeedback);
 
   const reasonMessages = {
     ELIGIBLE:
-      "Applicant passed the initial eligibility screening and can be invited to complete the Basic IT skills test.",
+      "Applicant passed the explicit automated checks in the final V4 application form.",
     NOT_ELIGIBLE:
-      "Applicant did not meet the initial eligibility criteria. The application has still been saved for programme records and reporting.",
+      "Applicant did not meet an explicit blocking requirement in the final V4 application form.",
     PENDING_REVIEW:
-      "Applicant requires internal data review because the initial eligibility check could not be completed automatically.",
+      "Applicant requires programme review under the final V4 application form guidance.",
   };
 
   return {
@@ -916,8 +880,8 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   };
 }
 
-function buildResponseRecord(applicantId, response) {
-  const questionDefinition = registrationFormQuestions.find(
+function buildResponseRecord(applicantId, response, questions = registrationFormQuestions) {
+  const questionDefinition = questions.find(
     (question) => question.questionCode === response.questionCode
   );
 
@@ -984,11 +948,15 @@ function buildResponseRecord(applicantId, response) {
 
 
 async function getRegistrationFormQuestions(req, res) {
+  const pathway = normalizePathway(req.query.pathway || "PHYSICAL_ACADEMY");
+  const questions = getApplicationQuestionsForPathway(pathway);
+
   return res.json({
     success: true,
-    formVersion: REGISTRATION_FORM_VERSION,
+    pathway,
+    formVersion: getApplicationFormVersion(pathway),
     screeningVersion: ELIGIBILITY_SCREENING_VERSION,
-    questions: registrationFormQuestions,
+    questions,
   });
 }
 
@@ -1037,7 +1005,7 @@ async function saveRegistrationDraft(req, res) {
       }
     }
 
-    const completionPercent = calculateDraftCompletionPercent(answers);
+    const completionPercent = calculateDraftCompletionPercent(answers, pathway);
     const now = new Date();
 
     const draft = await prisma.$transaction(async (tx) => {
@@ -1219,7 +1187,10 @@ async function submitRegistration(req, res) {
       });
     }
 
-    const missingRequiredQuestions = validateRequiredQuestions(parsedResponses);
+    const pathway = normalizePathway(req.body.pathway);
+    const pathwayQuestions = getApplicationQuestionsForPathway(pathway);
+
+    const missingRequiredQuestions = validateRequiredQuestions(parsedResponses, pathwayQuestions);
 
     if (missingRequiredQuestions.length > 0) {
       return res.status(400).json({
@@ -1228,7 +1199,7 @@ async function submitRegistration(req, res) {
       });
     }
 
-    const invalidQuestions = validateQuestionFormats(parsedResponses);
+    const invalidQuestions = validateQuestionFormats(parsedResponses, pathwayQuestions);
 
     if (invalidQuestions.length > 0) {
       return res.status(400).json({
@@ -1308,8 +1279,6 @@ async function submitRegistration(req, res) {
       req.body.registrationMode
     );
 
-    const pathway = normalizePathway(req.body.pathway);
-
     const eligibilityResult = calculateEligibility(parsedResponses, new Date(), pathway);
 
     const finalStatus =
@@ -1388,13 +1357,15 @@ async function submitRegistration(req, res) {
             getAnswerValue(parsedResponses, "ACCESSIBILITY_NEEDS")
           ),
 
-          canParticipateOnline: toBoolean(
-            getAnswerValue(parsedResponses, "CAN_PARTICIPATE_ONLINE")
-          ),
+          canParticipateOnline:
+            getAnswerValue(parsedResponses, "INTERNET_ACCESS") !== undefined
+              ? String(getAnswerValue(parsedResponses, "INTERNET_ACCESS") || "").trim() === "Yes"
+              : null,
 
-          hasDeviceAccess: toBoolean(
-            getAnswerValue(parsedResponses, "HAS_DEVICE_ACCESS")
-          ),
+          hasDeviceAccess:
+            getAnswerValue(parsedResponses, "DEVICE_ACCESS") !== undefined
+              ? String(getAnswerValue(parsedResponses, "DEVICE_ACCESS") || "").trim() !== "None of the above"
+              : null,
 
           heardAboutProject: answerToText(
             getAnswerValue(parsedResponses, "HEARD_ABOUT_PROJECT")
@@ -1436,7 +1407,15 @@ async function submitRegistration(req, res) {
 
           registrationMode,
           pathway,
-          formVersion: REGISTRATION_FORM_VERSION,
+          formName:
+            pathway === "PHYSICAL_ACADEMY"
+              ? "Participant Application Form - Physical Academy"
+              : pathway === "VIRTUAL_ACADEMY"
+                ? "Participant Application Form - Virtual Academy"
+                : pathway === "DIGITAL_ENTREPRENEURSHIP"
+                  ? "Participant Application Form - Digital Entrepreneurship"
+                  : "Participant Application Form",
+          formVersion: getApplicationFormVersion(pathway),
 
           isEligible: eligibilityResult.isEligible,
           eligibilityReason: eligibilityResult.reason,
@@ -1451,7 +1430,7 @@ async function submitRegistration(req, res) {
       });
 
       const responseRecords = parsedResponses.map((response) =>
-        buildResponseRecord(createdApplicant.id, response)
+        buildResponseRecord(createdApplicant.id, response, pathwayQuestions)
       );
 
       await tx.registrationResponse.createMany({

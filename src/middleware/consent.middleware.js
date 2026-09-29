@@ -1,12 +1,7 @@
-const { PHYSICAL_ACADEMY_CONSENT_VERSION } = require("../data/physicalAcademyConsent");
+const { getApplicationConsent } = require("../data/physicalAcademyConsent");
 
-function toBoolean(value) {
-  if (value === true) return true;
-  if (value === false) return false;
-  const normalized = String(value || "").trim().toLowerCase();
-  if (["yes", "true", "1", "y"].includes(normalized)) return true;
-  if (["no", "false", "0", "n"].includes(normalized)) return false;
-  return null;
+function normalizeAnswer(value) {
+  return String(value || "").trim();
 }
 
 function parseResponses(req) {
@@ -27,6 +22,7 @@ function getAnswer(responses, questionCode) {
 }
 
 function hasValue(value) {
+  if (Array.isArray(value)) return value.length > 0;
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
@@ -44,45 +40,29 @@ function isSupportedSignature(method, data) {
   return signature.trim().length >= 2;
 }
 
-function preserveJuratSignatureForStorage(req, responses, interpreterName, signatureData) {
-  const existingSignatureData = getResponse(responses, "JURAT_SIGNATURE_DATA");
+function optionEquals(value, expected) {
+  return normalizeAnswer(value).toLowerCase() === normalizeAnswer(expected).toLowerCase();
+}
 
-  if (existingSignatureData) {
-    existingSignatureData.answer = signatureData;
-  } else {
-    responses.push({
-      questionCode: "JURAT_SIGNATURE_DATA",
-      questionNumber: null,
-      questionText: "Interpreter electronic signature",
-      section: "Jurat / Interpreter",
-      responseType: "LONG_TEXT",
-      answer: signatureData,
-    });
+function hasSelectedOther(value) {
+  if (Array.isArray(value)) {
+    return value.some((item) => String(item || "").toLowerCase().startsWith("other"));
   }
-
-  const legacySignatureField = getResponse(responses, "JURAT_INTERPRETER_SIGNATURE");
-  if (legacySignatureField) {
-    // The existing form definition validates this field as a person name.
-    // Keep the interpreter name there for backward compatibility and store
-    // the actual drawn/typed signature separately in JURAT_SIGNATURE_DATA.
-    legacySignatureField.answer = interpreterName;
-  }
-
-  req.body.responses = JSON.stringify(responses);
+  return String(value || "").toLowerCase().startsWith("other");
 }
 
 function requireApplicationConsent(req, res, next) {
   const responses = parseResponses(req);
+  const consent = getApplicationConsent(req.body.pathway);
+
   const consentVersion = getAnswer(responses, "CONSENT_VERSION");
-  const informationRead = toBoolean(getAnswer(responses, "CONSENT_INFORMATION_READ"));
-  const agreedToParticipate = toBoolean(getAnswer(responses, "REGISTRATION_CONSENT"));
-  const signerNameOrId = getAnswer(responses, "CONSENT_NAME_ID_CODE");
+  const consentDecision = getAnswer(responses, "REGISTRATION_CONSENT");
+  const signerName = getAnswer(responses, "CONSENT_NAME_ID_CODE");
   const signedDate = getAnswer(responses, "CONSENT_SIGNED_DATE");
   const signatureMethod = getAnswer(responses, "CONSENT_SIGNATURE_METHOD");
   const signatureData = getAnswer(responses, "CONSENT_SIGNATURE_DATA");
-  const juratRequired = toBoolean(getAnswer(responses, "JURAT_REQUIRED"));
 
-  if (consentVersion !== PHYSICAL_ACADEMY_CONSENT_VERSION) {
+  if (consentVersion !== consent.version) {
     return res.status(400).json({
       success: false,
       reasonCode: "CONSENT_VERSION_REQUIRED",
@@ -90,53 +70,61 @@ function requireApplicationConsent(req, res, next) {
     });
   }
 
-  if (informationRead !== true || agreedToParticipate !== true) {
+  if (!optionEquals(consentDecision, consent.consentGrantedOption)) {
     return res.status(400).json({
       success: false,
       reasonCode: "CONSENT_REQUIRED",
-      message: "Consent is required before the Application can be submitted.",
+      message: "Consent is required before the application can be submitted.",
     });
   }
 
-  if (!hasValue(signerNameOrId) || !hasValue(signedDate) || !isSupportedSignature(signatureMethod, signatureData)) {
+  if (!hasValue(signerName) || !hasValue(signedDate) || !isSupportedSignature(signatureMethod, signatureData)) {
     return res.status(400).json({
       success: false,
       reasonCode: "SIGNED_CONSENT_REQUIRED",
-      message: "Please complete the consent name, date and electronic signature before continuing.",
+      message: "Please complete your name, date and electronic signature before continuing.",
     });
   }
 
-  if (juratRequired === null) {
+  const completedSelf = getAnswer(responses, "CONSENT_COMPLETED_SELF");
+  if (!hasValue(completedSelf)) {
     return res.status(400).json({
       success: false,
-      reasonCode: "JURAT_RESPONSE_REQUIRED",
-      message: "Please indicate whether the Application was translated or explained to you.",
+      reasonCode: "CONSENT_ASSISTANCE_RESPONSE_REQUIRED",
+      message: "Please indicate whether you completed the consent section yourself.",
     });
   }
 
-  if (juratRequired === true) {
-    const interpreterName = getAnswer(responses, "JURAT_INTERPRETER_NAME");
-    const interpreterAddress = getAnswer(responses, "JURAT_INTERPRETER_ADDRESS");
-    const language = getAnswer(responses, "JURAT_LANGUAGE");
-    const interpreterSignatureMethod = getAnswer(responses, "JURAT_SIGNATURE_METHOD");
-    const interpreterSignatureData = getAnswer(responses, "JURAT_INTERPRETER_SIGNATURE");
-    const juratDate = getAnswer(responses, "JURAT_DATE");
+  const needsAssistanceRecord = optionEquals(completedSelf, consent.assistanceRequiredOption);
 
-    if (
-      !hasValue(interpreterName) ||
-      !hasValue(interpreterAddress) ||
-      !hasValue(language) ||
-      !hasValue(juratDate) ||
-      !isSupportedSignature(interpreterSignatureMethod, interpreterSignatureData)
-    ) {
+  if (needsAssistanceRecord) {
+    const assistantName = getAnswer(responses, "CONSENT_ASSISTANT_NAME");
+    const relationship = getAnswer(responses, "CONSENT_ASSISTANT_RELATIONSHIP");
+    const relationshipOther = getAnswer(responses, "CONSENT_ASSISTANT_RELATIONSHIP_OTHER");
+    const assistanceTypes = getAnswer(responses, "CONSENT_ASSISTANCE_TYPES");
+    const assistanceTypeOther = getAnswer(responses, "CONSENT_ASSISTANCE_TYPE_OTHER");
+    const language = getAnswer(responses, "CONSENT_ASSISTANCE_LANGUAGE");
+    const assistantSignatureMethod = getAnswer(responses, "CONSENT_ASSISTANT_SIGNATURE_METHOD");
+    const assistantSignatureData = getAnswer(responses, "CONSENT_ASSISTANT_SIGNATURE_DATA");
+    const assistanceDate = getAnswer(responses, "CONSENT_ASSISTANCE_DATE");
+
+    const assistanceIsComplete =
+      hasValue(assistantName) &&
+      hasValue(relationship) &&
+      hasValue(assistanceTypes) &&
+      hasValue(language) &&
+      hasValue(assistanceDate) &&
+      isSupportedSignature(assistantSignatureMethod, assistantSignatureData) &&
+      (!hasSelectedOther(relationship) || hasValue(relationshipOther)) &&
+      (!hasSelectedOther(assistanceTypes) || hasValue(assistanceTypeOther));
+
+    if (!assistanceIsComplete) {
       return res.status(400).json({
         success: false,
-        reasonCode: "JURAT_REQUIRED",
-        message: "Please complete the Jurat interpreter details, date and electronic signature before continuing.",
+        reasonCode: "CONSENT_ASSISTANCE_DETAILS_REQUIRED",
+        message: "Please complete the details for the person who read, explained or interpreted the consent information.",
       });
     }
-
-    preserveJuratSignatureForStorage(req, responses, interpreterName, interpreterSignatureData);
   }
 
   return next();
