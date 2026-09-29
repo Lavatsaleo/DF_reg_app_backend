@@ -1,6 +1,7 @@
 const prisma = require("../config/prisma");
 const { hashToken } = require("../utils/tokenUtils");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
+const { sendEmail } = require("../services/email.service");
 const {
   createAndSendParticipantRegistrationInvitation,
   pathwaySupportsParticipantRegistration,
@@ -397,6 +398,103 @@ async function getParticipantRegistrationForm(req, res) {
   }
 }
 
+async function saveParticipantRegistrationSupportRequest(req, res) {
+  try {
+    const rawToken = String(req.params.token || "").trim();
+    const invitation = await loadInvitation(rawToken);
+
+    if (!invitation) {
+      return res.status(404).json({
+        success: false,
+        message: "This participant registration invitation could not be found.",
+      });
+    }
+
+    const effectiveStatus = getInvitationStatus(invitation);
+    if (["EXPIRED", "CANCELLED", "SUBMITTED"].includes(effectiveStatus)) {
+      return res.status(410).json({
+        success: false,
+        message: "This participant registration invitation is not available for a support request.",
+      });
+    }
+
+    const fullName = String(req.body.fullName || "").trim();
+    const contactNumber = String(req.body.contactNumber || "").trim();
+    const accommodation = String(req.body.accommodation || "").trim();
+
+    if (!fullName || !contactNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Full name and contact number are required so programme staff can contact you.",
+      });
+    }
+
+    const applicantId = invitation.applicant.id;
+
+    const supportRecords = [
+      ["PR_CONSENT_SUPPORT_REQUEST_NAME", "Name for consent explanation request", "TEXT", fullName],
+      ["PR_CONSENT_SUPPORT_REQUEST_PHONE", "Contact number for consent explanation request", "PHONE", contactNumber],
+      ["PR_CONSENT_SUPPORT_REQUEST_ACCOMMODATION", "Reasonable accommodation required for consent explanation", "LONG_TEXT", accommodation],
+    ];
+
+    await prisma.$transaction(async (tx) => {
+      await tx.registrationResponse.deleteMany({
+        where: {
+          applicantId,
+          formContext: "PARTICIPANT_REGISTRATION_SUPPORT_REQUEST",
+          questionCode: { in: supportRecords.map(([code]) => code) },
+        },
+      });
+
+      await tx.registrationResponse.createMany({
+        data: supportRecords
+          .filter(([, , , value]) => hasValue(value))
+          .map(([questionCode, questionText, responseType, value]) => ({
+            applicantId,
+            questionCode,
+            questionNumber: null,
+            questionText,
+            section: "Participant Registration Consent Support Request",
+            responseType,
+            valueText: String(value),
+            formContext: "PARTICIPANT_REGISTRATION_SUPPORT_REQUEST",
+            isEligibilityQuestion: false,
+            isPassing: null,
+          })),
+      });
+    });
+
+    const supportEmail = String(process.env.PARTICIPANT_REGISTRATION_SUPPORT_EMAIL || "").trim();
+
+    if (supportEmail) {
+      await sendEmail({
+        to: supportEmail,
+        subject: "Digital Futures participant requested consent support",
+        text: [
+          "A selected participant has requested help understanding the Participant Registration consent information.",
+          "",
+          `Participant: ${fullName}`,
+          `Application reference: ${invitation.applicant.applicationReference || "Not available"}`,
+          `Pathway: ${invitation.applicant.pathway}`,
+          `Contact number: ${contactNumber}`,
+          `Reasonable accommodation requirements: ${accommodation || "None stated"}`,
+        ].join("\n"),
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Your request has been recorded. Programme staff will contact you using the details provided.",
+    });
+  } catch (error) {
+    console.error("Participant registration support request error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to save your support request.",
+    });
+  }
+}
+
 async function submitParticipantRegistration(req, res) {
   try {
     const rawToken = String(req.params.token || "").trim();
@@ -692,6 +790,7 @@ async function resendParticipantRegistrationInvitation(req, res) {
 
 module.exports = {
   getParticipantRegistrationForm,
+  saveParticipantRegistrationSupportRequest,
   submitParticipantRegistration,
   resendParticipantRegistrationInvitation,
 };
