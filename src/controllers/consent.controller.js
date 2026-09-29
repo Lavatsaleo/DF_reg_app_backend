@@ -87,6 +87,7 @@ function buildConsentRecord(applicant) {
     consentVersion: version,
     consentSnapshot,
     informationRead: answers.CONSENT_INFORMATION_READ === true || String(answers.CONSENT_INFORMATION_READ || "").toLowerCase().startsWith("yes"),
+    consentDecision: answers.REGISTRATION_CONSENT || null,
     agreedToParticipate:
       answers.REGISTRATION_CONSENT === true ||
       String(answers.REGISTRATION_CONSENT || "").toLowerCase().startsWith("yes"),
