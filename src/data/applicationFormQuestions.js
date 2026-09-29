@@ -314,7 +314,9 @@ function identityQuestions({
         maxEligibleAge: ageMax,
         ageOutOfRangeAction: "review",
       },
-      helpText: ageMax === 45\n        ? "Eligibility: 18–45years, unless programme rules specify otherwise. Flag out-of-range applicants for review."\n        : "Eligibility: 18–35 years, unless programme rules specify otherwise. Flag out-of-range applicants for review.",
+      helpText: ageMax === 45
+        ? "Eligibility: 18–45years, unless programme rules specify otherwise. Flag out-of-range applicants for review."
+        : "Eligibility: 18–35 years, unless programme rules specify otherwise. Flag out-of-range applicants for review.",
     },
     {
       questionNumber: nationalIdNumber,
