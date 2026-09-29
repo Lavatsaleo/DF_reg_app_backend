@@ -206,6 +206,44 @@ function isValidPhoneDigits(value) {
   return /^\d{7,15}$/.test(String(value || "").trim());
 }
 
+function isValidCountryPhone(value, country) {
+  const digits = String(value || "").replace(/\D/g, "");
+  const rules = {
+    Kenya: [/^(?:01|07)\d{8}$/, /^254(?:1|7)\d{8}$/],
+    Nigeria: [/^(?:070|080|081|090|091)\d{8}$/, /^234(?:70|80|81|90|91)\d{8}$/],
+    Zambia: [/^09\d{8}$/, /^2609\d{8}$/],
+    Ghana: [/^(?:02|03|05)\d{8}$/, /^233(?:2|3|5)\d{8}$/],
+  };
+  const patterns = rules[String(country || "").trim()];
+  if (!patterns) return isValidPhoneDigits(digits);
+  return patterns.some((pattern) => pattern.test(digits));
+}
+
+function isValidIdentification(value) {
+  const clean = String(value || "").trim();
+  return clean.length >= 3 && /^[\p{L}\p{N}\s/_.()+#&-]+$/u.test(clean);
+}
+
+function isValidCardIdentification(value, responses = []) {
+  const clean = String(value || "").trim();
+  const country = getAnswerValue(responses, "COUNTRY");
+  const idType = String(getAnswerValue(responses, "NATIONAL_ID_TYPE") || "");
+
+  if (country === "Ghana" && idType.startsWith("Ghana Card")) {
+    return /^GHA-[A-Za-z0-9-]{11}$/.test(clean) && clean.length === 15;
+  }
+
+  if (country === "Nigeria" && idType.includes("National Identification Number")) {
+    return /^\d{11}$/.test(clean);
+  }
+
+  return isValidIdentification(clean);
+}
+
+function countWords(value) {
+  return String(value || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
 function isValidYear(value) {
   const year = Number(value);
   const currentYear = new Date().getFullYear();
@@ -279,6 +317,41 @@ function validateQuestionFormats(responses = [], questions = registrationFormQue
         questionCode: question.questionCode,
         questionText: question.questionText,
         message: `${question.questionText} must contain numbers only and must be 7 to 15 digits long.`,
+      });
+    }
+
+    if (question.validationType === "COUNTRY_PHONE") {
+      const country = getAnswerValue(responses, "COUNTRY");
+      if (!isValidCountryPhone(answer, country)) {
+        invalidQuestions.push({
+          questionCode: question.questionCode,
+          questionText: question.questionText,
+          message: `${question.questionText} does not match the phone-number format stated for ${country || "the selected country"}.`,
+        });
+      }
+    }
+
+    if (question.validationType === "IDENTIFICATION" && !isValidIdentification(answer)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must contain a valid identification number.`,
+      });
+    }
+
+    if (question.validationType === "CARD_IDENTIFICATION" && !isValidCardIdentification(answer, responses)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} does not match the identification format stated in the application form.`,
+      });
+    }
+
+    if (question.metadata?.maxWords && countWords(answer) > Number(question.metadata.maxWords)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${question.questionText} must be no more than ${question.metadata.maxWords} words.`,
       });
     }
 
