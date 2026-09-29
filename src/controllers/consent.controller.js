@@ -2,6 +2,8 @@ const prisma = require("../config/prisma");
 const {
   PHYSICAL_ACADEMY_CONSENT,
   PHYSICAL_ACADEMY_CONSENT_VERSION,
+  getApplicationConsent,
+  getConsentByVersion,
 } = require("../data/physicalAcademyConsent");
 
 const CONSENT_CODES = [
@@ -15,6 +17,20 @@ const CONSENT_CODES = [
   "CONSENT_DETECTED_COUNTRY",
   "CONSENT_CONTACT_CONTEXT",
   "CONSENT_CONTACTS_AT_SIGNING",
+  "CONSENT_SUPPORT_REQUEST_NAME",
+  "CONSENT_SUPPORT_REQUEST_PHONE",
+  "CONSENT_SUPPORT_REQUEST_ACCOMMODATION",
+  "CONSENT_COMPLETED_SELF",
+  "CONSENT_ASSISTANT_NAME",
+  "CONSENT_ASSISTANT_RELATIONSHIP",
+  "CONSENT_ASSISTANT_RELATIONSHIP_OTHER",
+  "CONSENT_ASSISTANCE_TYPES",
+  "CONSENT_ASSISTANCE_TYPE_OTHER",
+  "CONSENT_ASSISTANCE_LANGUAGE",
+  "CONSENT_ASSISTANT_SIGNATURE_METHOD",
+  "CONSENT_ASSISTANT_SIGNATURE_DATA",
+  "CONSENT_ASSISTANCE_DATE",
+  // Legacy Jurat fields are retained in the archive for applications submitted before V4.
   "JURAT_REQUIRED",
   "JURAT_INTERPRETER_NAME",
   "JURAT_INTERPRETER_ADDRESS",
@@ -54,6 +70,7 @@ function parseJsonValue(value) {
 function buildConsentRecord(applicant) {
   const answers = responseMap(applicant.responses);
   const version = answers.CONSENT_VERSION || PHYSICAL_ACADEMY_CONSENT_VERSION;
+  const consentSnapshot = getConsentByVersion(version) || PHYSICAL_ACADEMY_CONSENT;
 
   return {
     applicantId: applicant.id,
@@ -68,13 +85,32 @@ function buildConsentRecord(applicant) {
     pathway: applicant.pathway,
     submittedAt: applicant.createdAt,
     consentVersion: version,
-    consentSnapshot: version === PHYSICAL_ACADEMY_CONSENT_VERSION ? PHYSICAL_ACADEMY_CONSENT : null,
-    informationRead: answers.CONSENT_INFORMATION_READ === true || String(answers.CONSENT_INFORMATION_READ || "").toLowerCase() === "yes",
-    agreedToParticipate: answers.REGISTRATION_CONSENT === true || String(answers.REGISTRATION_CONSENT || "").toLowerCase() === "yes",
+    consentSnapshot,
+    informationRead: answers.CONSENT_INFORMATION_READ === true || String(answers.CONSENT_INFORMATION_READ || "").toLowerCase().startsWith("yes"),
+    agreedToParticipate:
+      answers.REGISTRATION_CONSENT === true ||
+      String(answers.REGISTRATION_CONSENT || "").toLowerCase().startsWith("yes"),
     nameOrIdCode: answers.CONSENT_NAME_ID_CODE || null,
     signedDate: answers.CONSENT_SIGNED_DATE || null,
     signatureMethod: answers.CONSENT_SIGNATURE_METHOD || null,
     signatureData: answers.CONSENT_SIGNATURE_DATA || null,
+    supportRequest: {
+      name: answers.CONSENT_SUPPORT_REQUEST_NAME || null,
+      phone: answers.CONSENT_SUPPORT_REQUEST_PHONE || null,
+      accommodation: answers.CONSENT_SUPPORT_REQUEST_ACCOMMODATION || null,
+    },
+    completedConsentSelf: answers.CONSENT_COMPLETED_SELF || null,
+    assistance: {
+      assistantName: answers.CONSENT_ASSISTANT_NAME || null,
+      relationship: answers.CONSENT_ASSISTANT_RELATIONSHIP || null,
+      relationshipOther: answers.CONSENT_ASSISTANT_RELATIONSHIP_OTHER || null,
+      assistanceTypes: answers.CONSENT_ASSISTANCE_TYPES || null,
+      assistanceTypeOther: answers.CONSENT_ASSISTANCE_TYPE_OTHER || null,
+      languageOrCommunicationMethod: answers.CONSENT_ASSISTANCE_LANGUAGE || null,
+      signatureMethod: answers.CONSENT_ASSISTANT_SIGNATURE_METHOD || null,
+      signatureData: answers.CONSENT_ASSISTANT_SIGNATURE_DATA || null,
+      date: answers.CONSENT_ASSISTANCE_DATE || null,
+    },
     juratRequired: answers.JURAT_REQUIRED === true || String(answers.JURAT_REQUIRED || "").toLowerCase() === "yes",
     jurat: {
       interpreterName: answers.JURAT_INTERPRETER_NAME || null,
@@ -88,9 +124,10 @@ function buildConsentRecord(applicant) {
 }
 
 async function getCurrentConsent(req, res) {
+  const consent = getApplicationConsent(req.query.pathway);
   return res.json({
     success: true,
-    consent: PHYSICAL_ACADEMY_CONSENT,
+    consent,
   });
 }
 
