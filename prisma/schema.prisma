@@ -17,6 +17,8 @@ enum ApplicantStatus {
   SYNCED_TO_DHIS2_PENDING_REVIEW
   UNDER_REVIEW
   APPROVED_FOR_ENROLLMENT
+  PARTICIPANT_REGISTRATION_PENDING
+  PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION
   REJECTED_BY_REVIEW_COMMITTEE
   ENROLLED_IN_DHIS2_PROGRAM
   SYNC_FAILED
@@ -90,6 +92,16 @@ enum BasicSkillsTestInvitationStatus {
   EMAIL_FAILED
   OPENED
   USED
+  EXPIRED
+  CANCELLED
+}
+
+enum ParticipantRegistrationInvitationStatus {
+  PENDING
+  SENT
+  EMAIL_FAILED
+  OPENED
+  SUBMITTED
   EXPIRED
   CANCELLED
 }
@@ -248,6 +260,7 @@ model Applicant {
   statusHistory      ApplicantStatusHistory[]
   skillsTestAttempts    BasicSkillsTestAttempt[]
   skillsTestInvitations BasicSkillsTestInvitation[]
+  participantRegistrationInvitations ParticipantRegistrationInvitation[]
   committeeAssignments  CommitteeAssignment[]
   committeeReviews      CommitteeReview[]
   committeeAssignmentHistory CommitteeAssignmentHistory[]
@@ -330,6 +343,7 @@ model RegistrationResponse {
   */
   isEligibilityQuestion Boolean @default(false)
   isPassing             Boolean?
+  formContext            String? @default("APPLICATION")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -423,6 +437,34 @@ model BasicSkillsTestInvitation {
   @@index([status])
   @@index([expiresAt])
   @@index([sentAt])
+}
+
+model ParticipantRegistrationInvitation {
+  id String @id @default(uuid())
+
+  applicantId String
+  tokenHash   String @unique
+  emailTo     String?
+
+  formVersion String @default("DF-02-PARTICIPANT-REGISTRATION-BASELINE-V1.0-2026-09-29")
+  status      ParticipantRegistrationInvitationStatus @default(PENDING)
+
+  sentAt      DateTime?
+  openedAt    DateTime?
+  submittedAt DateTime?
+  expiresAt   DateTime
+  emailError  String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  applicant Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@index([applicantId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([sentAt])
+  @@index([submittedAt])
 }
 
 model BasicSkillsTestAttempt {
