@@ -1,10 +1,8 @@
 const express = require("express");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const {
-  getBasicSkillsTestQuestions,
   getInvitationBasicSkillsTestQuestions,
   sendBasicSkillsTestInvitationForApplicant,
-  submitBasicSkillsTest,
   submitInvitationBasicSkillsTest,
 } = require("../controllers/basicSkillsTest.controller");
 
@@ -22,8 +20,5 @@ router.post(
   sendBasicSkillsTestInvitationForApplicant
 );
 
-// Backward-compatible/local testing routes using the public application reference.
-router.get("/:reference/questions", getBasicSkillsTestQuestions);
-router.post("/:reference/submit", submitBasicSkillsTest);
 
 module.exports = router;
