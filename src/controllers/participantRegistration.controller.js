@@ -750,6 +750,18 @@ async function resendParticipantRegistrationInvitation(req, res) {
       });
     }
 
+    const submittedInvitation = await prisma.participantRegistrationInvitation.findFirst({
+      where: { applicantId: applicant.id, status: "SUBMITTED" },
+      select: { id: true },
+    });
+
+    if (submittedInvitation) {
+      return res.status(409).json({
+        success: false,
+        message: "This participant has already submitted their registration. A second invitation cannot be issued.",
+      });
+    }
+
     if (!pathwaySupportsParticipantRegistration(applicant.pathway)) {
       return res.status(400).json({
         success: false,
