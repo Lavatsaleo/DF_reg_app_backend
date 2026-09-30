@@ -868,6 +868,131 @@ async function getCommitteeOverview(req, res) {
   }
 }
 
+// The selection committee receives the complete non-identifying application answers.
+// Names, contacts, identity documents and signatures belong only in verification.
+const BLIND_REVIEW_HIDDEN_CODES = new Set([
+  "FIRST_NAME", "MIDDLE_NAME", "LAST_NAME", "OTHER_NAMES",
+  "DATE_OF_BIRTH", "YEAR_OF_BIRTH",
+  "EMAIL", "CONTACT_NUMBER", "ALTERNATIVE_CONTACT_NUMBER",
+  "PHONE_NUMBER", "MOBILE_NUMBER", "WHATSAPP_NUMBER",
+  "NATIONAL_ID_NUMBER", "NATIONAL_ID_CARD_NUMBER",
+  "NATIONAL_ID_TYPE", "PASSPORT_NUMBER",
+  "NEXT_OF_KIN_NAME", "NEXT_OF_KIN_PHONE", "NEXT_OF_KIN_RELATIONSHIP",
+  "ADDRESS", "STREET_ADDRESS", "TOWN", "WARD", "SUB_COUNTY",
+  "COUNTY", "STATE", "REGION", "DISTRICT",
+  "REGISTRATION_CONSENT", "CONSENT_SIGNATURE", "CONSENT_SIGNATURE_DATA",
+  "ASSISTANT_NAME", "ASSISTANT_SIGNATURE", "ASSISTANT_SIGNATURE_DATA",
+  "APPLICATION_FORM_VERSION",
+]);
+
+function redactReviewNarrative(value, applicant) {
+  let text = String(value ?? "");
+  const identifiers = [
+    applicant.firstName,
+    applicant.lastName,
+    applicant.email,
+    applicant.contactNumber,
+    applicant.alternativeContactNumber,
+  ].filter((value) => String(value || "").trim().length >= 3);
+
+  for (const identifier of identifiers) {
+    const escaped = String(identifier).replace(/[|\\{}()[\]^$+*?.]/g, "\\async function listCommitteeAssignments(req, res) {");
+    text = text.replace(new RegExp(escaped, "gi"), "[redacted]");
+  }
+
+  return text
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email redacted]")
+    .replace(/(?:https?:\/\/|www\.)[^\s]+/gi, "[link redacted]")
+    .replace(/(?:\+?\d[\d\s()\/-]{7,}\d)/g, "[number redacted]");
+}
+
+function getBlindReviewResponseValue(response, applicant) {
+  let value = response.valueJson;
+  if (value === null || value === undefined) value = response.valueText;
+  if ((value === null || value === undefined || value === "") &&
+      response.valueNumber !== null) {
+    value = response.valueNumber;
+  }
+  if ((value === null || value === undefined || value === "") &&
+      response.valueBoolean !== null) {
+    value = response.valueBoolean ? "Yes" : "No";
+  }
+  if ((value === null || value === undefined || value === "") && response.valueDate) {
+    value = response.valueDate.toISOString().slice(0, 10);
+  }
+
+  return Array.isArray(value)
+    ? value.map((item) => redactReviewNarrative(item, applicant))
+    : redactReviewNarrative(value, applicant);
+}
+
+async function getBlindReviewApplication(req, res) {
+  try {
+    if (!requireLinkedCommitteeMember(req, res)) return null;
+
+    const assignment = await prisma.committeeAssignment.findUnique({
+      where: { id: req.params.assignmentId },
+      include: { applicant: true },
+    });
+
+    if (!assignment) {
+      return res.status(404).json({ success: false, message: "Assignment not found." });
+    }
+
+    if (!canAccessCountry(req.user, assignment.applicant?.country) ||
+        !canUserAccessAssignment(req, assignment)) {
+      return res.status(403).json({
+        success: false,
+        message: "You do not have access to this assigned application.",
+      });
+    }
+
+    const [responses, documentCount] = await Promise.all([
+      prisma.registrationResponse.findMany({
+        where: {
+          applicantId: assignment.applicantId,
+          OR: [{ formContext: "APPLICATION" }, { formContext: null }],
+        },
+        orderBy: [{ questionNumber: "asc" }, { createdAt: "asc" }],
+      }),
+      prisma.applicantDocument.count({ where: { applicantId: assignment.applicantId } }),
+    ]);
+
+    const allAnswers = responses
+      .filter((response) => {
+        const code = String(response.questionCode || "").toUpperCase();
+        if (BLIND_REVIEW_HIDDEN_CODES.has(code)) return false;
+        if (code.startsWith("PR_") || code.startsWith("CONSENT_")) return false;
+        if (/NAME|SIGNATURE|PASSPORT|NATIONAL_ID|PHONE|EMAIL|CONTACT_NUMBER|ADDRESS|IP_ADDRESS|DOCUMENT_NUMBER/.test(code)) return false;
+        return true;
+      })
+      .map((response) => ({
+        questionCode: response.questionCode,
+        questionText: response.questionText,
+        section: response.section || "Other application questions",
+        answer: getBlindReviewResponseValue(response, assignment.applicant),
+      }));
+
+    return res.json({
+      success: true,
+      applicationReference: assignment.applicant.applicationReference,
+      pathway: assignment.applicant.pathway,
+      country: assignment.applicant.country,
+      ageAtApplication: assignment.applicant.ageAtApplication,
+      isAnonymized: true,
+      documentCount,
+      questions: allAnswers,
+      note: "Identity fields and documents are hidden during committee review. Free text is redacted where possible; reviewers should flag any remaining identifying information supplied in narrative answers.",
+    });
+  } catch (error) {
+    console.error("Load blind review application error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load the application for committee review.",
+    });
+  }
+}
+
 async function listCommitteeAssignments(req, res) {
   try {
     const status = req.query.status ? normalizeAssignmentStatus(req.query.status) : null;
@@ -1453,6 +1578,7 @@ module.exports = {
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,
+  getBlindReviewApplication,
   listUnassignedReadyApplicants,
   autoAssignReadyApplicants,
   assignSingleApplicant,
