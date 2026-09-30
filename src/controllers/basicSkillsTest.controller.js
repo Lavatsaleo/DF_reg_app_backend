@@ -16,6 +16,7 @@ const {
 const {
   assignApplicantToLeastLoadedMember,
 } = require("../services/committeeAssignment.service");
+const { getApplicantCountryFilter } = require("../utils/countryAccess");
 
 const REVIEW_TERMINAL_STATUSES = [
   "APPROVED_FOR_ENROLLMENT",
@@ -648,6 +649,88 @@ async function submitInvitationBasicSkillsTest(req, res) {
   }
 }
 
+// Staff-only operational view: SMTP acceptance != arrival in the inbox.
+// Show failed and unopened test invitations so admins can safely resend.
+async function listBasicSkillsTestInvitationDelivery(req, res) {
+  try {
+    const countryFilter = getApplicantCountryFilter(req.user);
+
+    const applicants = await prisma.applicant.findMany({
+      where: {
+        ...countryFilter,
+        pathway: { in: ["PHYSICAL_ACADEMY", "VIRTUAL_ACADEMY"] },
+        isEligible: true,
+      },
+      select: {
+        id: true,
+        applicationReference: true,
+        pathway: true,
+        country: true,
+        email: true,
+        createdAt: true,
+        skillsTestAttempts: {
+          where: { status: "SUBMITTED" },
+          select: { id: true, submittedAt: true },
+          orderBy: { submittedAt: "desc" },
+          take: 1,
+        },
+        skillsTestInvitations: {
+          select: {
+            id: true,
+            status: true,
+            emailTo: true,
+            sentAt: true,
+            openedAt: true,
+            expiresAt: true,
+            emailError: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+
+    const records = applicants.map((applicant) => {
+      const invitation = applicant.skillsTestInvitations[0] || null;
+      const completed = applicant.skillsTestAttempts.length > 0;
+      const status = completed ? "TEST_COMPLETED" : invitation?.status || "NOT_CREATED";
+      return {
+        applicantId: applicant.id,
+        applicationReference: applicant.applicationReference,
+        pathway: applicant.pathway,
+        country: applicant.country,
+        emailTo: invitation?.emailTo || applicant.email || null,
+        status,
+        createdAt: invitation?.createdAt || applicant.createdAt,
+        sentAt: invitation?.sentAt || null,
+        openedAt: invitation?.openedAt || null,
+        expiresAt: invitation?.expiresAt || null,
+        emailError: invitation?.emailError || null,
+        canResend: !completed,
+      };
+    });
+
+    return res.json({
+      success: true,
+      records,
+      totals: records.reduce((totals, item) => {
+        totals[item.status] = (totals[item.status] || 0) + 1;
+        return totals;
+      }, {}),
+      note: "SENT means accepted by SMTP, not confirmed inbox delivery. If not received, confirm the address and check spam, quarantine and sender limits.",
+    });
+  } catch (error) {
+    console.error("List skills test delivery error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load Basic IT Skills Test invitation delivery statuses.",
+    });
+  }
+}
+
 async function sendBasicSkillsTestInvitationForApplicant(req, res) {
   try {
     const reference = normalizeReference(req.params.reference);
@@ -704,6 +787,7 @@ module.exports = {
   getBasicSkillsTestQuestions,
   getInvitationBasicSkillsTestQuestions,
   sendBasicSkillsTestInvitationForApplicant,
+  listBasicSkillsTestInvitationDelivery,
   submitBasicSkillsTest,
   submitInvitationBasicSkillsTest,
 };
