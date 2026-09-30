@@ -1633,7 +1633,7 @@ async function submitRegistration(req, res) {
         applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
           ? testInvitationEmailResult?.sent
             ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-            : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so the programme team can resend the invitation once email is configured."
+            : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. The email has not been confirmed as sent; the programme team can check the address and resend the invitation."
           : applicant.pathway === "DIGITAL_ENTREPRENEURSHIP" &&
               applicant.screeningStatus === "ELIGIBLE"
             ? committeeAssignment
@@ -1676,7 +1676,7 @@ async function submitRegistration(req, res) {
           applicant.status === "ELIGIBLE_PENDING_SKILLS_TEST"
             ? testInvitationEmailResult?.sent
               ? "You passed the initial eligibility check. A Basic IT skills test invitation link has been sent to your email address. Complete the test so the committee can review your full application."
-              : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. Email delivery is not active yet, so the programme team can resend the invitation once email is configured."
+              : "You passed the initial eligibility check and your Basic IT skills test invitation has been created. The email has not been confirmed as sent; the programme team can check the address and resend the invitation."
             : applicant.pathway === "DIGITAL_ENTREPRENEURSHIP" &&
                 applicant.screeningStatus === "ELIGIBLE"
               ? committeeAssignment
