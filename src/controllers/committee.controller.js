@@ -363,6 +363,7 @@ function summarizeSelectedParticipantReportRow(applicant, user) {
                 ? "SUBMITTED"
                 : participantRegistrationInvitation?.status || "NOT_SENT",
             sentAt: participantRegistrationInvitation?.sentAt || null,
+            emailError: participantRegistrationInvitation?.emailError || null,
             openedAt: participantRegistrationInvitation?.openedAt || null,
             submittedAt: participantRegistrationInvitation?.submittedAt || null,
             expiresAt: participantRegistrationInvitation?.expiresAt || null,
