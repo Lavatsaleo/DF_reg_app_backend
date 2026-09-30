@@ -6,6 +6,7 @@ const {
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,
+  getBlindReviewApplication,
   listUnassignedReadyApplicants,
   autoAssignReadyApplicants,
   assignSingleApplicant,
@@ -27,6 +28,7 @@ router.patch("/members/:memberId", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMI
 router.post("/members/:memberId/login", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMemberLogin);
 
 router.get("/assignments", listCommitteeAssignments);
+router.get("/assignments/:assignmentId/application", getBlindReviewApplication);
 router.get("/selected-report", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), listSelectedParticipantsReport);
 router.get("/unassigned-ready", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), listUnassignedReadyApplicants);
 router.post("/auto-assign", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), autoAssignReadyApplicants);
