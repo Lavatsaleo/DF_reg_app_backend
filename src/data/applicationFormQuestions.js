@@ -325,8 +325,8 @@ function identityQuestions({
         ageOutOfRangeAction: "review",
       },
       helpText: ageMax === 45
-        ? "Eligibility: 18–45years, unless programme rules specify otherwise. Flag out-of-range applicants for review."
-        : "Eligibility: 18–35 years, unless programme rules specify otherwise. Flag out-of-range applicants for review.",
+        ? "Age range for Digital Entrepreneurship: 18–45 years."
+        : "Age range for Physical and Virtual Academy: 18–33 years at application.",
     },
     {
       questionNumber: nationalIdNumber,
@@ -598,7 +598,7 @@ const physicalQuestions = [
     contactMethodNumber: 18,
     contactOtherNumber: 19,
     section: PERSONAL_SECTION,
-    ageMax: 35,
+    ageMax: 33,
   }),
   ...educationQuestions({
     educationNumber: 20,
