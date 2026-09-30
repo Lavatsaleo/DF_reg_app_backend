@@ -1450,11 +1450,37 @@ async function submitCommitteeReview(req, res) {
     let participantRegistrationEmailResult = null;
 
     if (result.participantRegistrationInvitationData?.invitation) {
-      participantRegistrationEmailResult = await sendParticipantRegistrationInvitation(
-        result.applicant,
-        result.participantRegistrationInvitationData.invitation,
-        result.participantRegistrationInvitationData.invitationUrl
-      );
+      try {
+        participantRegistrationEmailResult = await sendParticipantRegistrationInvitation(
+          result.applicant,
+          result.participantRegistrationInvitationData.invitation,
+          result.participantRegistrationInvitationData.invitationUrl
+        );
+      } catch (deliveryError) {
+        // The committee decision is committed already: SMTP or follow-up DB errors
+        // must never lead staff to think the selection itself was rolled back.
+        console.error("Selected participant registration invitation delivery error:", {
+          applicationReference: result.applicant.applicationReference,
+          code: deliveryError.code || null,
+          message: deliveryError.message,
+        });
+        participantRegistrationEmailResult = {
+          sent: false,
+          status: "EMAIL_FAILED",
+          reason: "Invitation delivery needs administrator follow-up.",
+        };
+        try {
+          await prisma.participantRegistrationInvitation.update({
+            where: { id: result.participantRegistrationInvitationData.invitation.id },
+            data: {
+              status: "EMAIL_FAILED",
+              emailError: deliveryError.message,
+            },
+          });
+        } catch (statusError) {
+          console.error("Unable to record participant registration email failure:", statusError);
+        }
+      }
     }
 
     const updatedAssignment = await prisma.committeeAssignment.findUnique({
@@ -1469,7 +1495,11 @@ async function submitCommitteeReview(req, res) {
           ? participantRegistrationEmailResult?.sent
             ? "Committee review decision saved. The participant registration invitation was sent by email."
             : "Committee review decision saved. The participant registration invitation was created, but email delivery needs follow-up."
-          : "Committee review decision saved successfully.",
+          : decision === "SELECTED" &&
+              pathwaySupportsParticipantRegistration(result.applicant.pathway) &&
+              !result.applicant.email
+            ? "Committee decision saved. No email address is available for this selected participant. Please contact an administrator to correct their application email before an invitation can be sent."
+            : "Committee review decision saved successfully.",
       review: result.review,
       participantRegistrationInvitation:
         result.participantRegistrationInvitationData?.invitation
