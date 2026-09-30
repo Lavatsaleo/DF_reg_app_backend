@@ -603,7 +603,7 @@ async function findIncompleteDraftByIdentifier(identifier) {
   return null;
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FINAL_APPLICATION_V4";
+const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FINAL_APPLICATION_V4_AGE33_20260930";
 const MIN_ELIGIBLE_AGE = 18;
 const MAX_ELIGIBLE_AGE = 45;
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
@@ -613,7 +613,7 @@ function getAgeRangeForPathway(pathway) {
   const normalizedPathway = normalizePathway(pathway);
   return {
     min: 18,
-    max: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? 45 : 35,
+    max: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? 45 : 33,
   };
 }
 
@@ -622,6 +622,8 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     "We could not confirm your age from the information provided, so the application needs a manual check.",
   AGE_DATA_OUTLIER: () =>
     "We could not validate the age information provided, so the application needs a manual check.",
+  ACADEMY_AGE_OUTSIDE_RANGE: ({ min, max }) =>
+    `The Physical and Virtual Academy application age range is ${min}–${max} years. Unfortunately, you do not meet the age requirement.`,
   AGE_OUTSIDE_REVIEW_RANGE: ({ min, max }) =>
     `The application form states an age range of ${min}–${max} years. Your application has been saved and flagged for programme review.`,
   ENTREPRENEURSHIP_AVAILABILITY_REQUIRED: () =>
@@ -802,7 +804,7 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     minEligibleAge: ageRange.min,
     maxEligibleAge: ageRange.max,
     withinStatedRange: ageWithinRange,
-    outOfRangeAction: "REVIEW",
+    outOfRangeAction: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? "REVIEW" : "NOT_ELIGIBLE",
   };
 
   if (ageEvidence.ageAtApplication === null) {
@@ -813,8 +815,13 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   ) {
     reasonCodes.push("AGE_DATA_OUTLIER");
   } else if (!ageWithinRange) {
-    // The final V4 form explicitly says to flag applicants outside the age range for review.
-    reasonCodes.push("AGE_OUTSIDE_REVIEW_RANGE");
+    // Physical/Virtual Academy: maximum 33 at application so participants remain within
+    // the programme's intended age ceiling at completion. DE retains manual review.
+    reasonCodes.push(
+      normalizedPathway === "DIGITAL_ENTREPRENEURSHIP"
+        ? "AGE_OUTSIDE_REVIEW_RANGE"
+        : "ACADEMY_AGE_OUTSIDE_RANGE"
+    );
   }
 
   criterionResults.disability = {
@@ -846,7 +853,7 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     reasonCodes.push("ENTREPRENEURSHIP_AVAILABILITY_REQUIRED");
   }
 
-  const blockingReasonCodes = ["ENTREPRENEURSHIP_AVAILABILITY_REQUIRED"];
+  const blockingReasonCodes = ["ENTREPRENEURSHIP_AVAILABILITY_REQUIRED", "ACADEMY_AGE_OUTSIDE_RANGE"];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
