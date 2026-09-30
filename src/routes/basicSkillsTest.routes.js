@@ -3,6 +3,7 @@ const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const {
   getInvitationBasicSkillsTestQuestions,
   sendBasicSkillsTestInvitationForApplicant,
+  listBasicSkillsTestInvitationDelivery,
   submitInvitationBasicSkillsTest,
 } = require("../controllers/basicSkillsTest.controller");
 
@@ -11,6 +12,14 @@ const router = express.Router();
 // Production applicant flow: applicant opens the private email invitation link.
 router.get("/invite/:token/questions", getInvitationBasicSkillsTestQuestions);
 router.post("/invite/:token/submit", submitInvitationBasicSkillsTest);
+
+// Only admins and country admins see applicant email addresses for troubleshooting.
+router.get(
+  "/invitations/delivery-report",
+  requireAuth,
+  requireRoles("ADMIN", "COUNTRY_ADMIN"),
+  listBasicSkillsTestInvitationDelivery
+);
 
 // Admin/local helper: resend or create a new invitation after eligibility screening.
 router.post(
