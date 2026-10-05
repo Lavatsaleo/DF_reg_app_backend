@@ -9,8 +9,15 @@ function base64UrlDecode(value) {
   return Buffer.from(String(value || ""), "base64url").toString("utf8");
 }
 
+const DEVELOPMENT_SECRET = "digital-futures-local-development-secret-change-me";
+
 function getSecret() {
-  return process.env.AUTH_TOKEN_SECRET || process.env.JWT_SECRET || "digital-futures-local-development-secret-change-me";
+  const secret = process.env.AUTH_TOKEN_SECRET || process.env.JWT_SECRET;
+  if (secret) return secret;
+
+  // The fallback is public in source control, so it may only sign tokens on a developer machine.
+  if (["development", "test"].includes(process.env.NODE_ENV)) return DEVELOPMENT_SECRET;
+  throw new Error("AUTH_TOKEN_SECRET must be set before staff sessions can be signed or verified.");
 }
 
 function sign(data) {
@@ -55,6 +62,7 @@ function verifyAuthToken(token) {
 }
 
 module.exports = {
+  getSecret,
   createAuthToken,
   verifyAuthToken,
 };

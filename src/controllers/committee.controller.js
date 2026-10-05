@@ -1085,10 +1085,10 @@ async function autoAssignReadyApplicants(req, res) {
   try {
     const country = isSuperAdmin(req.user) ? null : getUserCountry(req.user);
 
-    if (req.user?.role === "COUNTRY_ADMIN" && !country) {
+    if (!isSuperAdmin(req.user) && !country) {
       return res.status(403).json({
         success: false,
-        message: "Your country admin account is not assigned to a country.",
+        message: "Your account is not assigned to a country.",
       });
     }
 

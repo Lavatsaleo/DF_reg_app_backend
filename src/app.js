@@ -12,7 +12,18 @@ const participantRegistrationRoutes = require("./routes/participantRegistration.
 
 const app = express();
 
-app.use(cors());
+function getAllowedOrigins() {
+  return [process.env.FRONTEND_BASE_URL, ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",")]
+    .map((origin) => String(origin || "").trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+// The production frontend is served from the same origin; only listed origins get cross-origin access.
+app.use(cors({
+  origin(origin, callback) {
+    callback(null, !origin || getAllowedOrigins().includes(origin));
+  },
+}));
 app.use(morgan("dev"));
 
 app.use(express.json({ limit: "20mb" }));

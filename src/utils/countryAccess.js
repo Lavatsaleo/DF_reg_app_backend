@@ -2,6 +2,7 @@ const { COUNTRIES } = require("../data/administrativeLocations");
 
 const COUNTRY_ADMIN_ROLE = "COUNTRY_ADMIN";
 const SUPER_ADMIN_ROLE = "ADMIN";
+const NO_COUNTRY_SCOPE = { id: "__NO_COUNTRY_SCOPE__" };
 
 function toSafeString(value) {
   return String(value || "").trim();
@@ -42,13 +43,8 @@ function getApplicantCountryFilter(user) {
   const country = getUserCountry(user);
   if (country) return { country };
 
-  // A country admin without a country should not accidentally see global data.
-  if (user?.role === COUNTRY_ADMIN_ROLE) {
-    return { id: "__NO_COUNTRY_SCOPE__" };
-  }
-
-  // Backward compatibility for existing chairperson/member/viewer accounts created before country scoping.
-  return {};
+  // Only super admins see every country; any other account without a country sees nothing.
+  return NO_COUNTRY_SCOPE;
 }
 
 function getCommitteeMemberCountryFilter(user) {
@@ -57,11 +53,8 @@ function getCommitteeMemberCountryFilter(user) {
   const country = getUserCountry(user);
   if (country) return { country };
 
-  if (user?.role === COUNTRY_ADMIN_ROLE) {
-    return { id: "__NO_COUNTRY_SCOPE__" };
-  }
-
-  return {};
+  // Only super admins see every country; any other account without a country sees nothing.
+  return NO_COUNTRY_SCOPE;
 }
 
 function canAccessCountry(user, country) {
@@ -70,10 +63,7 @@ function canAccessCountry(user, country) {
   const userCountry = getUserCountry(user);
   const targetCountry = normalizeCountry(country);
 
-  if (!userCountry) {
-    // Preserve access for legacy non-country-scoped internal users, but never for a country admin.
-    return user?.role !== COUNTRY_ADMIN_ROLE;
-  }
+  if (!userCountry) return false;
 
   return targetCountry === userCountry;
 }
