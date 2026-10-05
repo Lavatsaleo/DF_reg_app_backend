@@ -19,6 +19,7 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
 app.use("/api/health", healthRoutes);
+app.use("/api/dashboard", require("./routes/applicationDashboard.routes"));
 app.use("/api/registrations", registrationRoutes);
 app.use("/api/basic-skills-test", basicSkillsTestRoutes);
 app.use("/api/auth", authRoutes);

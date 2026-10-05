@@ -4,7 +4,7 @@ const { generateSecureToken, hashToken } = require("../utils/tokenUtils");
 const { hashPassword, verifyPassword } = require("../utils/passwordUtils");
 const { normalizeEmail } = require("../utils/normalizers");
 const { sendEmail } = require("../services/email.service");
-const { normalizeCountry, getUserCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
+const { COUNTRIES, normalizeCountry, getUserCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
 
 const ALLOWED_ROLES = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER", "VIEWER"];
 
@@ -635,6 +635,10 @@ async function createStaffUser(req, res) {
         success: false,
         message: "Country is required when creating a country admin.",
       });
+    }
+
+    if (role === "VIEWER" && (committeeMemberId || (country && !COUNTRIES.includes(country)))) {
+      return res.status(400).json({ message: "A dashboard user must have a valid country or all-country access, and cannot be linked to a committee member." });
     }
 
     const user = await prisma.staffUser.create({

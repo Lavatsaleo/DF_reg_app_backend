@@ -19,7 +19,7 @@ const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER"));
 
 router.get("/overview", getCommitteeOverview);
 router.get("/members", listCommitteeMembers);
@@ -30,7 +30,7 @@ router.post("/members/:memberId/login", requireRoles("ADMIN", "COUNTRY_ADMIN", "
 router.get("/assignments", listCommitteeAssignments);
 router.get("/assignments/:assignmentId/application", getBlindReviewApplication);
 router.get("/selected-report", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), listSelectedParticipantsReport);
-router.get("/unassigned-ready", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), listUnassignedReadyApplicants);
+router.get("/unassigned-ready", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), listUnassignedReadyApplicants);
 router.post("/auto-assign", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), autoAssignReadyApplicants);
 router.post("/applicants/:applicantId/assign", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), assignSingleApplicant);
 router.patch("/assignments/:assignmentId/reassign", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), reassignApplicant);

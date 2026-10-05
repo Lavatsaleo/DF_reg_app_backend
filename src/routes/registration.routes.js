@@ -29,11 +29,11 @@ router.post(
   submitRegistration
 );
 
-router.get("/", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicants);
+router.get("/", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), getApplicants);
 
 // Must come before /:id so Express does not treat "status" as an applicant id.
 router.get("/status/:reference", getRegistrationStatus);
 
-router.get("/:id", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "VIEWER"), getApplicantById);
+router.get("/:id", requireAuth, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), getApplicantById);
 
 module.exports = router;
