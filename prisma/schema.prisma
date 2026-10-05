@@ -783,3 +783,24 @@ model RegistrationDraft {
   @@index([status])
   @@index([lastSavedAt])
 }
+
+
+// Separate from programme consent: requesting a call does not enrol an applicant.
+model ConsentSupportRequest {
+  id                  String   @id
+  fullName            String
+  contactNumber       String
+  country             String
+  pathway             String
+  accommodation       String?  @db.Text
+  consentVersion      String
+  payloadHash         String
+  status              String   @default("PENDING")
+  notificationStatus  String   @default("PENDING")
+  contactedAt         DateTime?
+  contactedBy         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([status, createdAt])
+}

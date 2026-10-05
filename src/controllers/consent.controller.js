@@ -173,6 +173,14 @@ async function getConsentRecords(req, res) {
       generatedAt: new Date().toISOString(),
       count: applicants.length,
       records: applicants.map(buildConsentRecord),
+      supportRequests: await prisma.consentSupportRequest.findMany({
+        orderBy: [{ status: "desc" }, { createdAt: "desc" }],
+        select: {
+          id: true, fullName: true, contactNumber: true, country: true,
+          pathway: true, accommodation: true, status: true,
+          notificationStatus: true, createdAt: true, contactedAt: true,
+        },
+      }),
     });
   } catch (error) {
     console.error("Get consent records error:", error);
@@ -187,3 +195,4 @@ module.exports = {
   getCurrentConsent,
   getConsentRecords,
 };
+
