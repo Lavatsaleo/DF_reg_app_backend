@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { ageBand, regionName, getDashboardFilters, summarizeApplications, createShowcaseRows } = require('../src/services/applicationDashboard.service');
+const { sexName, ageBand, regionName, getDashboardFilters, summarizeApplications, createShowcaseRows } = require('../src/services/applicationDashboard.service');
 const admin = { role: 'ADMIN' };
 test('roles and country scopes are enforced for live and showcase modes', () => {
   for (const role of ['COMMITTEE_MEMBER', 'COUNTRY_ADMIN', undefined]) assert.throws(() => getDashboardFilters({ role }), { status: 403 });
@@ -38,6 +38,28 @@ test('showcase covers 110 administrative regions and six months without database
   assert.equal(result.totals.applications, result.regions.reduce((n,r)=>n+r.count,0));
   assert.equal(regionName({country:'Nigeria',state:'FCT'}), 'Abuja Federal Capital Territory');
 });
+test('gender filter and disaggregation keep every application counted once', () => {
+  assert.deepEqual(['Female', ' male ', 'F', 'm', '', null, 'Other'].map(sexName), ['Female', 'Male', 'Female', 'Male', 'Not recorded', 'Not recorded', 'Not recorded']);
+  assert.throws(() => getDashboardFilters(admin, { sex: 'Unknown' }), { status: 400 });
+  const rows = [
+    { country: 'Kenya', sex: 'Female', ageAtApplication: 22, pathway: 'VIRTUAL_ACADEMY', createdAt: '2026-10-01T00:00:00Z', isEligible: true, status: 'APPROVED_FOR_ENROLLMENT', skillsTestAttempts: [{ percentage: 90 }] },
+    { country: 'Kenya', sex: 'female', ageAtApplication: 26, pathway: 'VIRTUAL_ACADEMY', createdAt: '2026-10-02T00:00:00Z', isEligible: true },
+    { country: 'Ghana', sex: 'Male', ageAtApplication: 22, pathway: 'PHYSICAL_ACADEMY', createdAt: '2026-10-03T00:00:00Z', isEligible: false },
+    { country: 'Ghana', sex: null, ageAtApplication: 31, pathway: 'PHYSICAL_ACADEMY', createdAt: '2026-10-03T00:00:00Z', isEligible: true },
+  ];
+  const all = summarizeApplications(rows, getDashboardFilters(admin));
+  assert.deepEqual(all.genders.map(g => [g.name, g.count]), [['Female', 2], ['Male', 1], ['Not recorded', 1]]);
+  for (const list of [all.ages, all.countries, all.pathways, all.monthly, all.regions, all.genders]) {
+    for (const item of list) assert.equal(Object.values(item.bySex).reduce((n, v) => n + v, 0), item.count);
+  }
+  assert.deepEqual(all.ages.find(a => a.name === '18–24').bySex, { Female: 1, Male: 1, 'Not recorded': 0 });
+  assert.deepEqual(all.genderFunnel.map(s => [s.name, s.bySex.Female, s.bySex.Male]), [['Applied', 2, 1], ['Initially eligible', 2, 0], ['ICT test completed', 1, 0], ['Shortlisted / enrolled', 1, 0]]);
+  const women = summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Female' }));
+  assert.equal(women.totals.applications, 2);
+  assert.equal(women.totals.shortlisted, 1);
+  assert.equal(women.countries.find(c => c.name === 'Ghana').count, 0);
+  assert.equal(summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Not recorded' })).totals.applications, 1);
+});
 test('controller limits live query to scope, selects no identities and skips DB in demo', async () => {
   const prismaPath = require.resolve('../src/config/prisma');
   let queries = [];
@@ -50,6 +72,7 @@ test('controller limits live query to scope, selects no identities and skips DB 
   assert.equal(live.code,200);
   assert.deepEqual(queries[0].where, {country:'Kenya'});
   assert.equal(queries[0].select.email, undefined);
+  assert.equal(queries[0].select.sex, true);
   assert.deepEqual(queries[0].select.skillsTestAttempts.where, {status:'SUBMITTED'});
   const denied = response();
   await getApplicationDashboard({ user, query:{country:'Ghana'} }, denied);

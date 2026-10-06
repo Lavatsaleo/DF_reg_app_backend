@@ -8,7 +8,7 @@ async function getApplicationDashboard(req, res) {
       where: filters.country ? { country: filters.country } : {},
       select: {
         country: true, county: true, state: true, region: true,
-        ageAtApplication: true, pathway: true, createdAt: true, isEligible: true, status: true,
+        ageAtApplication: true, sex: true, pathway: true, createdAt: true, isEligible: true, status: true,
         skillsTestAttempts: {
           where: { status: 'SUBMITTED' }, orderBy: { submittedAt: 'desc' }, take: 1,
           select: { percentage: true },
