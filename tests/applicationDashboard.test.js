@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { sexName, ageBand, regionName, getDashboardFilters, summarizeApplications, createShowcaseRows } = require('../src/services/applicationDashboard.service');
+const { sexName, disabilityTypes, sourceName, ageBand, regionName, getDashboardFilters, summarizeApplications, createShowcaseRows } = require('../src/services/applicationDashboard.service');
 const admin = { role: 'ADMIN' };
 test('roles and country scopes are enforced for live and showcase modes', () => {
   for (const role of ['COMMITTEE_MEMBER', 'COUNTRY_ADMIN', undefined]) assert.throws(() => getDashboardFilters({ role }), { status: 403 });
@@ -60,6 +60,26 @@ test('gender filter and disaggregation keep every application counted once', () 
   assert.equal(women.countries.find(c => c.name === 'Ghana').count, 0);
   assert.equal(summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Not recorded' })).totals.applications, 1);
 });
+test('disability types and awareness sources map both form wordings onto one list', () => {
+  assert.deepEqual(disabilityTypes({ disabilityType: 'Physical disability (mobility impairments, short stature, cerebral palsy, spina bifida), Person who is blind' }), ['Physical disability', 'Blind']);
+  assert.deepEqual(disabilityTypes({ disabilityType: 'Deaf-blindness' }), ['Deaf-blindness']);
+  assert.deepEqual(disabilityTypes({ disabilityType: 'Deaf, Low vision' }), ['Low vision', 'Deaf']);
+  assert.deepEqual(disabilityTypes({ disabilityType: '' }), ['Type not recorded']);
+  assert.deepEqual(['TV', 'Television', 'Social Media', 'Friend / family', 'Friends / Relatives', 'Organisation of persons with disabilities (OPD)', 'Employer / BDN', 'Something else', ''].map(sourceName),
+    ['TV', 'TV', 'Social media', 'Friends or family', 'Friends or family', 'Organisation of persons with disabilities', 'Employer or BDN', 'Other', 'Not recorded']);
+  const rows = [
+    { country: 'Kenya', sex: 'Female', createdAt: '2026-10-01T00:00:00Z', hasDisability: true, disabilityType: 'Albinism, Low vision', heardAboutProject: 'Radio' },
+    { country: 'Kenya', sex: 'Male', createdAt: '2026-10-01T00:00:00Z', hasDisability: true, disabilityType: 'Low vision', heardAboutProject: 'Radio' },
+    { country: 'Kenya', sex: 'Male', createdAt: '2026-10-01T00:00:00Z', hasDisability: false, heardAboutProject: '' },
+  ];
+  const result = summarizeApplications(rows, getDashboardFilters(admin));
+  assert.equal(result.disability.count, 2);
+  assert.deepEqual(result.disability.bySex, { Female: 1, Male: 1, 'Not recorded': 0 });
+  assert.equal(result.disability.types.find(t => t.name === 'Low vision').count, 2);
+  assert.equal(result.disability.types.find(t => t.name === 'Albinism').count, 1);
+  assert.equal(result.sources.find(t => t.name === 'Radio').count, 2);
+  assert.equal(result.sources.find(t => t.name === 'Not recorded').count, 1);
+});
 test('controller limits live query to scope, selects no identities and skips DB in demo', async () => {
   const prismaPath = require.resolve('../src/config/prisma');
   let queries = [];
@@ -73,6 +93,8 @@ test('controller limits live query to scope, selects no identities and skips DB 
   assert.deepEqual(queries[0].where, {country:'Kenya'});
   assert.equal(queries[0].select.email, undefined);
   assert.equal(queries[0].select.sex, true);
+  assert.equal(queries[0].select.disabilityType, true);
+  assert.equal(queries[0].select.heardAboutProject, true);
   assert.deepEqual(queries[0].select.skillsTestAttempts.where, {status:'SUBMITTED'});
   const denied = response();
   await getApplicationDashboard({ user, query:{country:'Ghana'} }, denied);
