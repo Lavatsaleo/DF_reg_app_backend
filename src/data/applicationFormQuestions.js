@@ -624,23 +624,6 @@ function academyQuestions(pathway) {
   }
 
   const shared = [
-    ...locationQuestions({
-      countryNumber: next(),
-      levelOneNumber: next(),
-      levelTwoNumber: next(),
-      townNumber: next(),
-      section: PERSONAL_SECTION,
-      countryHelp: "Ask all. Drives the country-specific formats used at Qs 12 - 16.",
-    }).map((question, index) => ({
-      ...question,
-      metadata: {
-        ...(question.metadata || {}),
-        ...(index === 0 ? {
-          sectionIntro: "The questions in this section ask about who you are, where you live and how we can contact you about your application and the programme",
-          sectionNotice: "You will be required to submit supporting documents during the verification process. The specific documents required will depend on the selected pathway, country requirements, and eligibility checks.",
-        } : {}),
-      },
-    })),
     ...identityQuestions({
       firstNameNumber: next(),
       middleNameNumber: next(),
@@ -658,6 +641,23 @@ function academyQuestions(pathway) {
       section: PERSONAL_SECTION,
       ageMax: 33,
     }),
+    ...locationQuestions({
+      countryNumber: next(),
+      levelOneNumber: next(),
+      levelTwoNumber: next(),
+      townNumber: next(),
+      section: PERSONAL_SECTION,
+      countryHelp: "Ask all. Drives the country-specific formats used at Qs 12 - 16.",
+    }).map((question, index) => ({
+      ...question,
+      metadata: {
+        ...(question.metadata || {}),
+        ...(index === 0 ? {
+          sectionIntro: "The questions in this section ask about who you are, where you live and how we can contact you about your application and the programme",
+          sectionNotice: "You will be required to submit supporting documents during the verification process. The specific documents required will depend on the selected pathway, country requirements, and eligibility checks.",
+        } : {}),
+      },
+    })),
     ...educationQuestions({
       educationNumber: next(),
       otherNumber: next(),
@@ -756,7 +756,7 @@ function academyQuestions(pathway) {
     {
       questionNumber: next(),
       questionCode: "DIGITAL_SKILLS_LEVEL",
-      questionText: "How you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
+      questionText: "How would you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
       section: motivationSection,
       responseType: "SINGLE_SELECT",
       required: true,
@@ -861,7 +861,7 @@ const digitalEntrepreneurshipQuestions = [
   {
     questionNumber: 1,
     questionCode: "TRAINING_AVAILABILITY",
-    questionText: "Are you available to commit on average 5 hours per week for a minimum period of 3 months to study'",
+    questionText: "Are you available to commit an average of 5 hours per week for at least 3 months to study?",
     section: ENTREPRENEUR_ELIGIBILITY_SECTION,
     responseType: "BOOLEAN",
     required: true,
@@ -893,13 +893,30 @@ const digitalEntrepreneurshipQuestions = [
     accessibilityOtherNumber: 9,
     section: ENTREPRENEUR_ELIGIBILITY_SECTION,
   }),
-  ...locationQuestions({
-    countryNumber: 10,
-    levelOneNumber: 11,
-    levelTwoNumber: 12,
-    townNumber: 13,
+  ...identityQuestions({
+    firstNameNumber: 10,
+    middleNameNumber: 11,
+    lastNameNumber: 12,
+    sexNumber: 13,
+    dobNumber: 14,
+    idTypeNumber: 15,
+    nationalIdNumber: 16,
+    cardNumber: 17,
+    phoneNumber: 18,
+    alternativePhoneNumber: 19,
+    emailNumber: 20,
+    contactMethodNumber: 21,
+    contactOtherNumber: 22,
     section: ENTREPRENEUR_PERSONAL_SECTION,
-    countryHelp: "Ask all. Drives the country-specific formats used at Q19, Q22 and Q23.",
+    ageMax: 45,
+  }),
+  ...locationQuestions({
+    countryNumber: 23,
+    levelOneNumber: 24,
+    levelTwoNumber: 25,
+    townNumber: 26,
+    section: ENTREPRENEUR_PERSONAL_SECTION,
+    countryHelp: "Ask all. Drives the country-specific formats used for ID and phone questions.",
   }).map((question, index) => ({
     ...question,
     metadata: {
@@ -909,23 +926,6 @@ const digitalEntrepreneurshipQuestions = [
       } : {}),
     },
   })),
-  ...identityQuestions({
-    firstNameNumber: 14,
-    middleNameNumber: 15,
-    lastNameNumber: 16,
-    sexNumber: 17,
-    dobNumber: 18,
-    idTypeNumber: 19,
-    nationalIdNumber: 20,
-    cardNumber: 21,
-    phoneNumber: 22,
-    alternativePhoneNumber: 23,
-    emailNumber: 24,
-    contactMethodNumber: 25,
-    contactOtherNumber: 26,
-    section: ENTREPRENEUR_PERSONAL_SECTION,
-    ageMax: 45,
-  }),
   ...priorEngagementQuestions({
     participatedNumber: 27,
     trainingNumber: 28,

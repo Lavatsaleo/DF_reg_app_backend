@@ -943,11 +943,11 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
 
   const reasonMessages = {
     ELIGIBLE:
-      "Applicant passed the explicit automated checks in the final V4 application form.",
+      "You meet the initial eligibility requirements for this pathway.",
     NOT_ELIGIBLE:
-      "Applicant did not meet an explicit blocking requirement in the final V4 application form.",
+      "Your application did not meet one or more of the initial eligibility requirements for this pathway.",
     PENDING_REVIEW:
-      "Applicant requires programme review under the final V4 application form guidance.",
+      "The programme team needs to check some of your answers before the next step.",
   };
 
   return {

@@ -7173,8 +7173,8 @@
       "name": "DF DIGITAL_SKILLS_LEVEL - Digital skills level",
       "shortName": "DF DIGITAL_SKILLS_LEVEL",
       "code": "DF_DIGITAL_SKILLS_LEVEL",
-      "formName": "How you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
-      "description": "How you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
+      "formName": "How would you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
+      "description": "How would you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
       "domainType": "TRACKER",
       "valueType": "TEXT",
       "aggregationType": "NONE",
@@ -11411,6 +11411,62 @@
   ],
   "programRules": [
     {
+      "id": "gvNPQt5hEES",
+      "name": "DF hide NATIONAL_ID_TYPE unless COUNTRY matches",
+      "program": {
+        "id": "O8nC4YThWdy"
+      },
+      "condition": "!((#{df_country} == 'GHANA' || #{df_country} == 'NIGERIA'))",
+      "priority": 1,
+      "programRuleActions": [
+        {
+          "id": "izUZlgbOSD7"
+        }
+      ]
+    },
+    {
+      "id": "EfagYXP2FXs",
+      "name": "DF hide NATIONAL_ID_NUMBER unless COUNTRY or NATIONAL_ID_TYPE matches",
+      "program": {
+        "id": "O8nC4YThWdy"
+      },
+      "condition": "!((#{df_country} == 'KENYA' || #{df_country} == 'ZAMBIA') || (#{df_national_id_type} == 'GHANA_CARD' || #{df_national_id_type} == 'NATIONAL_IDENTIFICATION_NUMBER_NIN'))",
+      "priority": 1,
+      "programRuleActions": [
+        {
+          "id": "o3ypdpaN4eA"
+        }
+      ]
+    },
+    {
+      "id": "NYH4maooUe1",
+      "name": "DF hide NATIONAL_ID_CARD_NUMBER unless NATIONAL_ID_TYPE matches",
+      "program": {
+        "id": "O8nC4YThWdy"
+      },
+      "condition": "!((#{df_national_id_type} == 'VOTER_S_ID_CARD' || #{df_national_id_type} == 'NHIS_CARD' || #{df_national_id_type} == 'DRIVER_S_LICENCE' || #{df_national_id_type} == 'PASSPORT'))",
+      "priority": 1,
+      "programRuleActions": [
+        {
+          "id": "PJ6HKo9YBtF"
+        }
+      ]
+    },
+    {
+      "id": "ZWG5u4HF2K7",
+      "name": "DF hide PREFERRED_CONTACT_METHOD_OTHER unless PREFERRED_CONTACT_METHOD matches",
+      "program": {
+        "id": "O8nC4YThWdy"
+      },
+      "condition": "!((#{df_preferred_contact_method} == 'OTHER'))",
+      "priority": 1,
+      "programRuleActions": [
+        {
+          "id": "aiWOh7dZGf0"
+        }
+      ]
+    },
+    {
       "id": "JyN61n8Q79p",
       "name": "DF hide COUNTY unless COUNTRY matches",
       "program": {
@@ -11477,62 +11533,6 @@
       "programRuleActions": [
         {
           "id": "uLNDM5RdVRY"
-        }
-      ]
-    },
-    {
-      "id": "gvNPQt5hEES",
-      "name": "DF hide NATIONAL_ID_TYPE unless COUNTRY matches",
-      "program": {
-        "id": "O8nC4YThWdy"
-      },
-      "condition": "!((#{df_country} == 'GHANA' || #{df_country} == 'NIGERIA'))",
-      "priority": 1,
-      "programRuleActions": [
-        {
-          "id": "izUZlgbOSD7"
-        }
-      ]
-    },
-    {
-      "id": "EfagYXP2FXs",
-      "name": "DF hide NATIONAL_ID_NUMBER unless COUNTRY or NATIONAL_ID_TYPE matches",
-      "program": {
-        "id": "O8nC4YThWdy"
-      },
-      "condition": "!((#{df_country} == 'KENYA' || #{df_country} == 'ZAMBIA') || (#{df_national_id_type} == 'GHANA_CARD' || #{df_national_id_type} == 'NATIONAL_IDENTIFICATION_NUMBER_NIN'))",
-      "priority": 1,
-      "programRuleActions": [
-        {
-          "id": "o3ypdpaN4eA"
-        }
-      ]
-    },
-    {
-      "id": "NYH4maooUe1",
-      "name": "DF hide NATIONAL_ID_CARD_NUMBER unless NATIONAL_ID_TYPE matches",
-      "program": {
-        "id": "O8nC4YThWdy"
-      },
-      "condition": "!((#{df_national_id_type} == 'VOTER_S_ID_CARD' || #{df_national_id_type} == 'NHIS_CARD' || #{df_national_id_type} == 'DRIVER_S_LICENCE' || #{df_national_id_type} == 'PASSPORT'))",
-      "priority": 1,
-      "programRuleActions": [
-        {
-          "id": "PJ6HKo9YBtF"
-        }
-      ]
-    },
-    {
-      "id": "ZWG5u4HF2K7",
-      "name": "DF hide PREFERRED_CONTACT_METHOD_OTHER unless PREFERRED_CONTACT_METHOD matches",
-      "program": {
-        "id": "O8nC4YThWdy"
-      },
-      "condition": "!((#{df_preferred_contact_method} == 'OTHER'))",
-      "priority": 1,
-      "programRuleActions": [
-        {
-          "id": "aiWOh7dZGf0"
         }
       ]
     },
@@ -12505,6 +12505,46 @@
   ],
   "programRuleActions": [
     {
+      "id": "izUZlgbOSD7",
+      "programRule": {
+        "id": "gvNPQt5hEES"
+      },
+      "programRuleActionType": "HIDEFIELD",
+      "trackedEntityAttribute": {
+        "id": "NuwTKQYHIsz"
+      }
+    },
+    {
+      "id": "o3ypdpaN4eA",
+      "programRule": {
+        "id": "EfagYXP2FXs"
+      },
+      "programRuleActionType": "HIDEFIELD",
+      "trackedEntityAttribute": {
+        "id": "wvf03udrFTC"
+      }
+    },
+    {
+      "id": "PJ6HKo9YBtF",
+      "programRule": {
+        "id": "NYH4maooUe1"
+      },
+      "programRuleActionType": "HIDEFIELD",
+      "trackedEntityAttribute": {
+        "id": "D7h8G879WHf"
+      }
+    },
+    {
+      "id": "aiWOh7dZGf0",
+      "programRule": {
+        "id": "ZWG5u4HF2K7"
+      },
+      "programRuleActionType": "HIDEFIELD",
+      "trackedEntityAttribute": {
+        "id": "Fmh2c0Jospi"
+      }
+    },
+    {
       "id": "UCw98GNuJEB",
       "programRule": {
         "id": "JyN61n8Q79p"
@@ -12552,46 +12592,6 @@
       "programRuleActionType": "HIDEFIELD",
       "trackedEntityAttribute": {
         "id": "kCYvRFVs6jg"
-      }
-    },
-    {
-      "id": "izUZlgbOSD7",
-      "programRule": {
-        "id": "gvNPQt5hEES"
-      },
-      "programRuleActionType": "HIDEFIELD",
-      "trackedEntityAttribute": {
-        "id": "NuwTKQYHIsz"
-      }
-    },
-    {
-      "id": "o3ypdpaN4eA",
-      "programRule": {
-        "id": "EfagYXP2FXs"
-      },
-      "programRuleActionType": "HIDEFIELD",
-      "trackedEntityAttribute": {
-        "id": "wvf03udrFTC"
-      }
-    },
-    {
-      "id": "PJ6HKo9YBtF",
-      "programRule": {
-        "id": "NYH4maooUe1"
-      },
-      "programRuleActionType": "HIDEFIELD",
-      "trackedEntityAttribute": {
-        "id": "D7h8G879WHf"
-      }
-    },
-    {
-      "id": "aiWOh7dZGf0",
-      "programRule": {
-        "id": "ZWG5u4HF2K7"
-      },
-      "programRuleActionType": "HIDEFIELD",
-      "trackedEntityAttribute": {
-        "id": "Fmh2c0Jospi"
       }
     },
     {
