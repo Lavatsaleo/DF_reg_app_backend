@@ -7,6 +7,7 @@ const {
   DISTRICT_OPTIONS_BY_COUNTRY_AND_PARENT,
   LOCATION_HIERARCHY,
 } = require("./administrativeLocations");
+const { PATHWAY_ELIGIBILITY } = require("./pathwayEligibility");
 
 /*
  * Digital Futures application forms — FINAL V4
@@ -37,8 +38,8 @@ const EDUCATION_OPTIONS = [
   "No Education",
   "Pre-Primary",
   "Primary",
-  "Secondary /",
   "Junior Secondary",
+  "Senior Secondary",
   "Certificate / Vocational / TVET",
   "Diploma /Ordinary National Diploma (OND)",
   "Highter National Diploma (HND)",
@@ -123,15 +124,15 @@ const PHONE_PATTERNS = {
 };
 
 const NATIONAL_ID_HELP =
-  "Kenya: National ID (8 digits) or passport number. Nigeria: NIN (11 digits) or passport number. Zambia: NRC or passport number (allow slashes/letters).";
+  "Kenya: National ID (8 digits) or passport number. Nigeria: NIN (11 digits). Ghana: Ghana Card (15 characters beginning GHA-). Zambia: NRC or passport number (allow slashes/letters).";
 
-const ID_TYPE_OPTIONS = [
-  "Ghana Card / National Identification Number (NIN)",
-  "Voter’s ID Card",
-  "NHIS Card",
-  "Driver’s Licence",
-  "Passport",
-];
+// Ghana and Nigeria applicants choose an ID type first; each country sees only its own national ID.
+const NATIONAL_ID_OPTION_BY_COUNTRY = {
+  Ghana: "Ghana Card",
+  Nigeria: "National Identification Number (NIN)",
+};
+const OTHER_ID_OPTIONS = ["Voter’s ID Card", "NHIS Card", "Driver’s Licence", "Passport"];
+const ID_TYPE_OPTIONS = [...Object.values(NATIONAL_ID_OPTION_BY_COUNTRY), ...OTHER_ID_OPTIONS];
 
 function setupQuestions(pathway) {
   return [
@@ -168,6 +169,9 @@ function setupQuestions(pathway) {
   ];
 }
 
+// Nigerian applicants distinguish a current residential address from their place of origin.
+const RESIDENCE_HELP = "Give your current residential address (where you live now), not your place of origin.";
+
 function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, townNumber, section, countryHelp }) {
   return [
     {
@@ -181,41 +185,48 @@ function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, town
       helpText: countryHelp || "",
       metadata: { dialCodes: COUNTRY_DIAL_CODES, locationHierarchy: LOCATION_HIERARCHY },
     },
+    // Each country sees its own administrative names (e.g. Nigeria: State and LGA; Zambia: Province and District).
     {
       questionNumber: levelOneNumber,
       questionCode: "COUNTY",
-      questionText: "County / Region",
+      questionText: "County",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
       options: KENYA_COUNTIES,
+      helpText: RESIDENCE_HELP,
       showIf: { questionCode: "COUNTRY", operator: "equals", value: "Kenya" },
     },
     {
       questionNumber: levelOneNumber,
       questionCode: "STATE",
-      questionText: "County / Region",
+      questionText: "State / Province",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
       options: [],
-      metadata: { optionsByCountry: STATE_OPTIONS_BY_COUNTRY },
+      helpText: RESIDENCE_HELP,
+      metadata: {
+        optionsByCountry: STATE_OPTIONS_BY_COUNTRY,
+        labelByCountry: { Nigeria: "State", Zambia: "Province" },
+      },
       showIf: { questionCode: "COUNTRY", operator: "in", value: ["Nigeria", "Zambia"] },
     },
     {
       questionNumber: levelOneNumber,
       questionCode: "REGION",
-      questionText: "County / Region",
+      questionText: "Region",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
       options: GHANA_REGIONS,
+      helpText: RESIDENCE_HELP,
       showIf: { questionCode: "COUNTRY", operator: "equals", value: "Ghana" },
     },
     {
       questionNumber: levelTwoNumber,
       questionCode: "SUB_COUNTY",
-      questionText: "Ward",
+      questionText: "Sub-county",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
@@ -223,24 +234,25 @@ function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, town
       metadata: {
         parentQuestionCode: "COUNTY",
         optionsByParent: LOCATION_HIERARCHY.Kenya.children,
-        emptyOptionLabel: "Select County / Region first",
+        emptyOptionLabel: "Select County first",
       },
       showIf: { questionCode: "COUNTRY", operator: "equals", value: "Kenya" },
     },
     {
       questionNumber: levelTwoNumber,
       questionCode: "DISTRICT",
-      questionText: "Ward",
+      questionText: "District / LGA",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
       options: [],
       metadata: {
         optionsByCountryAndParent: DISTRICT_OPTIONS_BY_COUNTRY_AND_PARENT,
+        labelByCountry: { Nigeria: "Local Government Area (LGA)", Ghana: "District", Zambia: "District" },
         emptyOptionLabelByCountry: {
-          Nigeria: "Select County / Region first",
-          Ghana: "Select County / Region first",
-          Zambia: "Select County / Region first",
+          Nigeria: "Select State first",
+          Ghana: "Select Region first",
+          Zambia: "Select Province first",
         },
       },
       showIf: { questionCode: "COUNTRY", operator: "in", value: ["Nigeria", "Ghana", "Zambia"] },
@@ -252,6 +264,7 @@ function locationQuestions({ countryNumber, levelOneNumber, levelTwoNumber, town
       section,
       responseType: "TEXT",
       required: true,
+      helpText: "The town or city where you currently live.",
     },
   ];
 }
@@ -329,37 +342,49 @@ function identityQuestions({
         : "Age range for Physical and Virtual Academy: 18–33 years at application.",
     },
     {
-      questionNumber: nationalIdNumber,
-      questionCode: "NATIONAL_ID_NUMBER",
-      questionText: nationalIdNumber === 19 ? "National ID /" : "National ID number",
-      section,
-      responseType: "TEXT",
-      required: true,
-      validationType: "IDENTIFICATION",
-      helpText: `Text/number entry only  a supporting document upload is not yet confirmed for this field (pending country-team decision). ${NATIONAL_ID_HELP}`,
-      showIf: { questionCode: "COUNTRY", operator: "in", value: ["Kenya", "Nigeria", "Zambia"] },
-    },
-    {
       questionNumber: idTypeNumber,
       questionCode: "NATIONAL_ID_TYPE",
-      questionText: "Type of national identification provided [GHANA & NIGERIA ONLY]",
+      questionText: "Type of national identification provided",
       section,
       responseType: "SINGLE_SELECT",
       required: true,
       options: ID_TYPE_OPTIONS,
+      metadata: {
+        optionsByCountry: Object.fromEntries(
+          Object.entries(NATIONAL_ID_OPTION_BY_COUNTRY).map(([country, option]) => [country, [option, ...OTHER_ID_OPTIONS]])
+        ),
+      },
       showIf: { questionCode: "COUNTRY", operator: "in", value: ["Ghana", "Nigeria"] },
+    },
+    {
+      // Kenya and Zambia always give a national ID number; Ghana and Nigeria only when they chose their national ID.
+      questionNumber: nationalIdNumber,
+      questionCode: "NATIONAL_ID_NUMBER",
+      questionText: "National ID number",
+      section,
+      responseType: "TEXT",
+      required: true,
+      validationType: "NATIONAL_ID",
+      helpText: NATIONAL_ID_HELP,
+      metadata: {
+        labelByCountry: { Nigeria: "National Identification Number (NIN)", Ghana: "Ghana Card number" },
+      },
+      showIf: [
+        { questionCode: "COUNTRY", operator: "in", value: ["Kenya", "Zambia"] },
+        { questionCode: "NATIONAL_ID_TYPE", operator: "in", value: Object.values(NATIONAL_ID_OPTION_BY_COUNTRY) },
+      ],
     },
     {
       questionNumber: cardNumber,
       questionCode: "NATIONAL_ID_CARD_NUMBER",
-      questionText: "Enter the card identification number",
+      questionText: "Identification document number",
       section,
       responseType: "TEXT",
       required: true,
       validationType: "CARD_IDENTIFICATION",
-      helpText: "ALPHANUMERIC. If Ghana Card, then 15 characters and begins with “GHA- “. If Nigeria, NIN is 11 digits all Numeric.",
+      helpText: "Enter the number exactly as printed on your identification document.",
       metadata: { idTypeQuestionCode: "NATIONAL_ID_TYPE" },
-      showIf: { questionCode: "COUNTRY", operator: "in", value: ["Ghana", "Nigeria"] },
+      showIf: { questionCode: "NATIONAL_ID_TYPE", operator: "in", value: OTHER_ID_OPTIONS },
     },
     {
       questionNumber: phoneNumber,
@@ -375,12 +400,12 @@ function identityQuestions({
     {
       questionNumber: alternativePhoneNumber,
       questionCode: "ALTERNATIVE_CONTACT_NUMBER",
-      questionText: "Alternative phone (spouse, parent or sibling)",
+      questionText: "Emergency contact phone number (for example a spouse, parent or sibling)",
       section,
       responseType: "PHONE",
       required: false,
       validationType: "COUNTRY_PHONE",
-      helpText: PHONE_HELP,
+      helpText: `The phone number of someone we can contact if we cannot reach you. ${PHONE_HELP}`,
       metadata: { phonePatternsByCountry: PHONE_PATTERNS },
     },
     {
@@ -541,249 +566,290 @@ const DISABILITY_SECTION = "Section 4: Disability, accessibility & health";
 const PRIOR_SECTION = "Section 5: Prior engagement with Sightsavers.";
 const MOTIVATION_SECTION = "Section 6: Motivation & training readiness";
 const VIRTUAL_ACCESS_SECTION = "Section 6: Access to device, internet and electricity";
+const VIRTUAL_MOTIVATION_SECTION = "Section 7: Motivation & training readiness";
 
-const physicalQuestions = [
-  ...setupQuestions("PHYSICAL_ACADEMY"),
-  {
-    questionNumber: 1,
-    questionCode: "TRAINING_AVAILABILITY",
+const ACADEMY_AVAILABILITY = {
+  PHYSICAL_ACADEMY: {
     questionText: "Are you available to participate in a nine-month residential training programme?",
-    section: PHYSICAL_SECTION_1,
-    responseType: "BOOLEAN",
-    required: true,
-    options: ["Yes", "No"],
     helpText: "Please note that you will be required to attend in-person classes at the training institute for the full nine months.",
-    metadata: {
-      sectionIntro: "The questions in this section ask about the training programme you would like to join and your availability to participate",
+    // Zambia's physical academy runs for about eight months.
+    labelByCountry: {
+      Zambia: "Are you available to take part in full-time, in-person training from mid-April to mid-December 2027?",
+    },
+    helpTextByCountry: {
+      Zambia: "Please note that you will be required to attend in-person classes at the training institute for the full training period.",
     },
   },
-  {
-    questionNumber: 2,
-    questionCode: "ACCOMMODATION_REQUIRED",
-    questionText: "Do you require accommodation at the training institute?",
-    section: PHYSICAL_SECTION_1,
-    responseType: "BOOLEAN",
-    required: true,
-    options: ["Yes", "No"],
+  VIRTUAL_ACADEMY: {
+    questionText: "Are you available to participate in a four-month virtual training programme?",
+    helpText: "Please note that you will be required to attend online classes for the full four months.",
   },
-  ...locationQuestions({
-    countryNumber: 3,
-    levelOneNumber: 4,
-    levelTwoNumber: 5,
-    townNumber: 6,
-    section: PERSONAL_SECTION,
-    countryHelp: "Ask all. Drives the country-specific formats used at Qs 12 - 16.",
-  }).map((question, index) => ({
-    ...question,
-    metadata: {
-      ...(question.metadata || {}),
-      ...(index === 0 ? {
-        sectionIntro: "The questions in this section ask about who you are, where you live and how we can contact you about your application and the programme",
-        sectionNotice: "You will be required to submit supporting documents during the verification process. The specific documents required will depend on the selected pathway, country requirements, and eligibility checks.",
-      } : {}),
-    },
-  })),
-  ...identityQuestions({
-    firstNameNumber: 7,
-    middleNameNumber: 8,
-    lastNameNumber: 9,
-    sexNumber: 10,
-    dobNumber: 11,
-    nationalIdNumber: 12,
-    idTypeNumber: 13,
-    cardNumber: 14,
-    phoneNumber: 15,
-    alternativePhoneNumber: 16,
-    emailNumber: 17,
-    contactMethodNumber: 18,
-    contactOtherNumber: 19,
-    section: PERSONAL_SECTION,
-    ageMax: 33,
-  }),
-  ...educationQuestions({
-    educationNumber: 20,
-    otherNumber: 21,
-    courseNumber: 22,
-    section: EDUCATION_SECTION,
-  }).map((question, index) => ({
-    ...question,
-    metadata: {
-      ...(question.metadata || {}),
-      ...(index === 0 ? {
-        sectionIntro: "The questions in this section ask about your educational background and any qualifications you have completed",
-      } : {}),
-    },
-  })),
-  ...disabilityQuestions({
-    disabilityNumber: 23,
-    typeNumber: 24,
-    otherTypeNumber: 25,
-    accessibilityNumber: 26,
-    accessibilityOtherNumber: 27,
-    section: DISABILITY_SECTION,
-  }).map((question, index) => ({
-    ...question,
-    metadata: {
-      ...(question.metadata || {}),
-      ...(index === 0 ? {
-        sectionIntro: "The questions in this section ask about disability, accessibility and support requirements so that we can better understand participants' needs and make the programme as accessible as possible",
-      } : {}),
-    },
-  })),
-  ...priorEngagementQuestions({
-    participatedNumber: 28,
-    trainingNumber: 29,
-    otherNumber: 30,
-    section: PRIOR_SECTION,
-  }).map((question, index) => ({
-    ...question,
-    metadata: {
-      ...(question.metadata || {}),
-      ...(index === 0 ? {
-        sectionIntro: "The questions in this section ask about any previous training, activities or support you may have received through Sightsavers programmes.",
-      } : {}),
-    },
-  })),
-  {
-    questionNumber: 31,
-    questionCode: "MOTIVATION",
-    questionText: "Why have you applied for this training programme, and how do you expect it to help you achieve your future employment goals? Please tell us about your motivation, what you hope to learn, and how you plan to use these skills after completing the training. (Maximum 200 words)",
-    section: MOTIVATION_SECTION,
-    responseType: "LONG_TEXT",
-    required: true,
-    metadata: {
-      maxWords: 200,
-      sectionIntro: "The questions in this section ask about your interest in the programme, your goals, your current skills and your readiness to participate in the training.",
-    },
-  },
-  {
-    questionNumber: 32,
-    questionCode: "TRAINING_START_READINESS",
-    questionText: "How soon are you ready and available to start the training programme if selected?",
-    section: MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Immediately", "Within 1 month", "In 1–3 months", "More than 3 months from now"],
-    helpText: "Purpose: informs pipeline timing and cohort scheduling for successful applicants.",
-  },
-  {
-    questionNumber: 33,
-    questionCode: "HEARD_ABOUT_PROJECT",
-    questionText: "How did you hear about the project?",
-    section: MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: [
-      "Television",
-      "Radio",
-      "Social Media",
-      "Friends / Relatives",
-      "Organisation of Persons with Disabilities (OPD)",
-      "Flyer/Poster/Banner",
-      "Other",
-    ],
-  },
-  {
-    questionNumber: 34,
-    questionCode: "HEARD_ABOUT_PROJECT_OTHER",
-    questionText: "If Other, please specify",
-    section: MOTIVATION_SECTION,
-    responseType: "TEXT",
-    required: true,
-    showIf: { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: "Other" },
-  },
-  {
-    questionNumber: 35,
-    questionCode: "DIGITAL_SKILLS_LEVEL",
-    questionText: "How you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
-    section: MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: [
-      "Beginner (I need a lot of help using these applications)",
-      "Basic (I can do simple things using these applications)",
-      "Intermediate (I can do most basic tasks alone)",
-      "Advanced (I can work without help)",
-    ],
-  },
-];
+};
 
-const virtualQuestions = [
-  ...physicalQuestions.map((question) => {
-    if (question.questionCode === "COURSE_APPLIED_FOR") {
-      return { ...question, options: ["Virtual Academy"] };
-    }
-    return { ...question };
-  }),
-  {
-    questionNumber: 38,
-    questionCode: "DEVICE_ACCESS",
-    questionText: "Which device do you have access to",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Tablet", "Smartphone", "Laptop", "Desktop Computer", "None of the above"],
-    helpText: "(Studies in this course will be conducted across all days of the week)",
-    metadata: {
-      sectionIntro: "The next questions ask about your access to a device, internet, and electricity to help us understand whether you have the resources needed to participate in training and identify any support that may be required to enable your participation.",
+// The Physical and Virtual Academy forms share most questions. The Virtual Academy has no residential
+// accommodation question and asks about digital access before motivation. Questions are numbered in order.
+function academyQuestions(pathway) {
+  const isVirtual = pathway === "VIRTUAL_ACADEMY";
+  const motivationSection = isVirtual ? VIRTUAL_MOTIVATION_SECTION : MOTIVATION_SECTION;
+  let number = 0;
+  const next = () => ++number;
+
+  const opening = [
+    {
+      questionNumber: next(),
+      questionCode: "TRAINING_AVAILABILITY",
+      questionText: ACADEMY_AVAILABILITY[pathway].questionText,
+      helpText: ACADEMY_AVAILABILITY[pathway].helpText,
+      section: PHYSICAL_SECTION_1,
+      responseType: "BOOLEAN",
+      required: true,
+      options: ["Yes", "No"],
+      metadata: {
+        labelByCountry: ACADEMY_AVAILABILITY[pathway].labelByCountry,
+        helpTextByCountry: ACADEMY_AVAILABILITY[pathway].helpTextByCountry,
+        sectionIntro: "The questions in this section ask about the training programme you would like to join and your availability to participate",
+      },
     },
-  },
-  {
-    questionNumber: 39,
-    questionCode: "DEVICE_ACCESS_HOURS",
-    questionText: "On average, how many hours per day do you have access to your primary device in a day?",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Less than 1 hour", "1-3 hours", "4-6 hours", "7 hours or more"],
-  },
-  {
-    questionNumber: 40,
-    questionCode: "INTERNET_ACCESS",
-    questionText: "Do you have internet connection/access?",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Yes", "No", "Maybe"],
-  },
-  {
-    questionNumber: 41,
-    questionCode: "INTERNET_RELIABILITY",
-    questionText: "How reliable is your internet for ~10–15 hours of study per week?",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Reliable", "On and Off", "Rare/None"],
-    showIf: { questionCode: "INTERNET_ACCESS", operator: "equals", value: "Yes" },
-  },
-  {
-    questionNumber: 42,
-    questionCode: "POWER_SUPPLY_RELIABILITY",
-    questionText: "Is your power supply consistent enough to support a fixed daily virtual training schedule?",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Yes, reliably", "Sometimes – it varies by day", "Rarely – it is unpredictable", "No"],
-  },
-  {
-    questionNumber: 43,
-    questionCode: "WEEKDAY_POWER_HOURS",
-    questionText: "How many hours of total power (grid + generator + solar combined) do you typically have access to on a weekday",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Less than 2 hours", "2-6 hours", "6-12 hours", "12-18 hours", "18-24 hours"],
-  },
-  {
-    questionNumber: 44,
-    questionCode: "ALTERNATIVE_POWER_LOCATION",
-    questionText: "Is there a location outside your home where you can reliably access power for training? (e.g. business centre, library, co-working space)",
-    section: VIRTUAL_ACCESS_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: ["Yes – within walking distance", "Yes – but it requires transport", "No"],
-  },
-];
+  ];
+  if (!isVirtual) {
+    opening.push({
+      questionNumber: next(),
+      questionCode: "ACCOMMODATION_REQUIRED",
+      questionText: "Do you require accommodation at the training institute?",
+      section: PHYSICAL_SECTION_1,
+      responseType: "BOOLEAN",
+      required: true,
+      options: ["Yes", "No"],
+    });
+  }
+
+  const shared = [
+    ...locationQuestions({
+      countryNumber: next(),
+      levelOneNumber: next(),
+      levelTwoNumber: next(),
+      townNumber: next(),
+      section: PERSONAL_SECTION,
+      countryHelp: "Ask all. Drives the country-specific formats used at Qs 12 - 16.",
+    }).map((question, index) => ({
+      ...question,
+      metadata: {
+        ...(question.metadata || {}),
+        ...(index === 0 ? {
+          sectionIntro: "The questions in this section ask about who you are, where you live and how we can contact you about your application and the programme",
+          sectionNotice: "You will be required to submit supporting documents during the verification process. The specific documents required will depend on the selected pathway, country requirements, and eligibility checks.",
+        } : {}),
+      },
+    })),
+    ...identityQuestions({
+      firstNameNumber: next(),
+      middleNameNumber: next(),
+      lastNameNumber: next(),
+      sexNumber: next(),
+      dobNumber: next(),
+      idTypeNumber: next(),
+      nationalIdNumber: next(),
+      cardNumber: next(),
+      phoneNumber: next(),
+      alternativePhoneNumber: next(),
+      emailNumber: next(),
+      contactMethodNumber: next(),
+      contactOtherNumber: next(),
+      section: PERSONAL_SECTION,
+      ageMax: 33,
+    }),
+    ...educationQuestions({
+      educationNumber: next(),
+      otherNumber: next(),
+      courseNumber: next(),
+      section: EDUCATION_SECTION,
+    }).map((question, index) => ({
+      ...question,
+      metadata: {
+        ...(question.metadata || {}),
+        ...(index === 0 ? {
+          sectionIntro: "The questions in this section ask about your educational background and any qualifications you have completed",
+        } : {}),
+      },
+    })),
+    ...disabilityQuestions({
+      disabilityNumber: next(),
+      typeNumber: next(),
+      otherTypeNumber: next(),
+      accessibilityNumber: next(),
+      accessibilityOtherNumber: next(),
+      section: DISABILITY_SECTION,
+    }).map((question, index) => ({
+      ...question,
+      metadata: {
+        ...(question.metadata || {}),
+        ...(index === 0 ? {
+          sectionIntro: "The questions in this section ask about disability, accessibility and support requirements so that we can better understand participants' needs and make the programme as accessible as possible",
+        } : {}),
+      },
+    })),
+    ...priorEngagementQuestions({
+      participatedNumber: next(),
+      trainingNumber: next(),
+      otherNumber: next(),
+      section: PRIOR_SECTION,
+    }).map((question, index) => ({
+      ...question,
+      metadata: {
+        ...(question.metadata || {}),
+        ...(index === 0 ? {
+          sectionIntro: "The questions in this section ask about any previous training, activities or support you may have received through Sightsavers programmes.",
+        } : {}),
+      },
+    })),
+  ];
+
+  const motivation = () => [
+    {
+      questionNumber: next(),
+      questionCode: "MOTIVATION",
+      questionText: "Why have you applied for this training programme, and how do you expect it to help you achieve your future employment goals? Please tell us about your motivation, what you hope to learn, and how you plan to use these skills after completing the training. (Maximum 200 words)",
+      section: motivationSection,
+      responseType: "LONG_TEXT",
+      required: true,
+      metadata: {
+        maxWords: 200,
+        sectionIntro: "The questions in this section ask about your interest in the programme, your goals, your current skills and your readiness to participate in the training.",
+      },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "TRAINING_START_READINESS",
+      questionText: "How soon are you ready and available to start the training programme if selected?",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Immediately", "Within 1 month", "In 1–3 months", "More than 3 months from now"],
+      helpText: "Purpose: informs pipeline timing and cohort scheduling for successful applicants.",
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT",
+      questionText: "How did you hear about the project?",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: [
+        "Television",
+        "Radio",
+        "Social Media",
+        "Friends / Relatives",
+        "Organisation of Persons with Disabilities (OPD)",
+        "Flyer/Poster/Banner",
+        "Other",
+      ],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OTHER",
+      questionText: "If Other, please specify",
+      section: motivationSection,
+      responseType: "TEXT",
+      required: true,
+      showIf: { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: "Other" },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "DIGITAL_SKILLS_LEVEL",
+      questionText: "How you describe your current digital skills? These are skills in using basic computer applications such as Google Chrome, Microsoft Edge, Microsoft Word, Excel, PowerPoint or google docs.",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: [
+        "Beginner (I need a lot of help using these applications)",
+        "Basic (I can do simple things using these applications)",
+        "Intermediate (I can do most basic tasks alone)",
+        "Advanced (I can work without help)",
+      ],
+    },
+  ];
+
+  const digitalAccess = () => [
+    {
+      questionNumber: next(),
+      questionCode: "DEVICE_ACCESS",
+      questionText: "Which device do you have access to",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Tablet", "Smartphone", "Laptop", "Desktop Computer", "None of the above"],
+      helpText: "(Studies in this course will be conducted across all days of the week)",
+      metadata: {
+        sectionIntro: "The next questions ask about your access to a device, internet, and electricity to help us understand whether you have the resources needed to participate in training and identify any support that may be required to enable your participation.",
+      },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "DEVICE_ACCESS_HOURS",
+      questionText: "On average, how many hours per day do you have access to your primary device in a day?",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Less than 1 hour", "1-3 hours", "4-6 hours", "7 hours or more"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "INTERNET_ACCESS",
+      questionText: "Do you have internet connection/access?",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes", "No", "Maybe"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "INTERNET_RELIABILITY",
+      questionText: "How reliable is your internet for ~10–15 hours of study per week?",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Reliable", "On and Off", "Rare/None"],
+      showIf: { questionCode: "INTERNET_ACCESS", operator: "equals", value: "Yes" },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "POWER_SUPPLY_RELIABILITY",
+      questionText: "Is your power supply consistent enough to support a fixed daily virtual training schedule?",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes, reliably", "Sometimes – it varies by day", "Rarely – it is unpredictable", "No"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "WEEKDAY_POWER_HOURS",
+      questionText: "How many hours of total power (grid + generator + solar combined) do you typically have access to on a weekday",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Less than 2 hours", "2-6 hours", "6-12 hours", "12-18 hours", "18-24 hours"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "ALTERNATIVE_POWER_LOCATION",
+      questionText: "Is there a location outside your home where you can reliably access power for training? (e.g. business centre, library, co-working space)",
+      section: VIRTUAL_ACCESS_SECTION,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes – within walking distance", "Yes – but it requires transport", "No"],
+    },
+  ];
+
+  return [
+    ...setupQuestions(pathway),
+    ...opening,
+    ...shared,
+    ...(isVirtual ? [...digitalAccess(), ...motivation()] : motivation()),
+  ];
+}
+
+const physicalQuestions = academyQuestions("PHYSICAL_ACADEMY");
+const virtualQuestions = academyQuestions("VIRTUAL_ACADEMY");
 
 const ENTREPRENEUR_ELIGIBILITY_SECTION = "Section 1: Eligibility Criteria";
 const ENTREPRENEUR_PERSONAL_SECTION = "Section 2: Personal & contact details";
@@ -804,6 +870,13 @@ const digitalEntrepreneurshipQuestions = [
     helpText: "Mandatory. If ‘No’ – applicant does not meet this eligibility requirement; do not continue with the application.",
     metadata: {
       blockingAnswer: "No",
+      // Kenya's programme runs for about six months with in-person workshops in Nairobi.
+      labelByCountry: {
+        Kenya: "Are you available to take part in the six-month programme, including in-person workshops in Nairobi?",
+      },
+      helpTextByCountry: {
+        Kenya: "Training combines in-person workshops at Strathmore University, Nairobi, with online learning.",
+      },
     },
   },
   ...educationQuestions({
@@ -842,8 +915,8 @@ const digitalEntrepreneurshipQuestions = [
     lastNameNumber: 16,
     sexNumber: 17,
     dobNumber: 18,
-    nationalIdNumber: 19,
-    idTypeNumber: 20,
+    idTypeNumber: 19,
+    nationalIdNumber: 20,
     cardNumber: 21,
     phoneNumber: 22,
     alternativePhoneNumber: 23,
@@ -969,10 +1042,24 @@ const digitalEntrepreneurshipQuestions = [
   },
 ];
 
+// The form checks age and education as the applicant answers, using the same rules as the server.
+function withEligibilityRules(questions, pathway) {
+  return questions.map((question) => {
+    if (!["DATE_OF_BIRTH", "EDUCATION_LEVEL"].includes(question.questionCode)) return question;
+    const metadata = { ...(question.metadata || {}), eligibilityByCountry: PATHWAY_ELIGIBILITY[pathway] };
+    if (question.questionCode === "EDUCATION_LEVEL" && pathway === "VIRTUAL_ACADEMY") {
+      metadata.helpTextByCountry = {
+        Nigeria: "If your highest qualification is an NCE, choose Other and enter NCE. The programme team will check it.",
+      };
+    }
+    return { ...question, metadata };
+  });
+}
+
 const QUESTION_SETS = {
-  PHYSICAL_ACADEMY: physicalQuestions,
-  VIRTUAL_ACADEMY: virtualQuestions,
-  DIGITAL_ENTREPRENEURSHIP: digitalEntrepreneurshipQuestions,
+  PHYSICAL_ACADEMY: withEligibilityRules(physicalQuestions, "PHYSICAL_ACADEMY"),
+  VIRTUAL_ACADEMY: withEligibilityRules(virtualQuestions, "VIRTUAL_ACADEMY"),
+  DIGITAL_ENTREPRENEURSHIP: withEligibilityRules(digitalEntrepreneurshipQuestions, "DIGITAL_ENTREPRENEURSHIP"),
 };
 
 function normalizePathway(value) {
@@ -984,7 +1071,7 @@ function normalizePathway(value) {
 
 function getApplicationQuestionsForPathway(pathway) {
   const normalized = normalizePathway(pathway);
-  return QUESTION_SETS[normalized] || physicalQuestions;
+  return QUESTION_SETS[normalized] || QUESTION_SETS.PHYSICAL_ACADEMY;
 }
 
 function getApplicationFormVersion(pathway) {

@@ -1,65 +1,48 @@
-const BASIC_SKILLS_TEST_PASSING_PERCENTAGE = Number(
-  process.env.BASIC_SKILLS_TEST_PASSING_PERCENTAGE || 60
-);
-const BASIC_SKILLS_TEST_VERSION =
-  process.env.BASIC_SKILLS_TEST_VERSION || "BASIC_IT_SKILLS_BANK_V1";
-const BASIC_SKILLS_TEST_LENGTH = Number(process.env.BASIC_SKILLS_TEST_LENGTH || 10);
+// IT skills assessment configuration from the DigComp 3.0 question bank guidance (October 2026).
+// Every applicant gets 30 questions drawn by fixed domain quotas; 1 mark per correct answer, pass mark 22/30.
+// These values are programme policy, so they are not read from .env.
+const BASIC_SKILLS_TEST_VERSION = "DF_IT_DIGCOMP3_BANK_20261021";
+const BASIC_SKILLS_TEST_LENGTH = 30;
+const BASIC_SKILLS_TEST_PASS_MARK = 22;
+const BASIC_SKILLS_TEST_PASSING_PERCENTAGE =
+  Math.round((BASIC_SKILLS_TEST_PASS_MARK / BASIC_SKILLS_TEST_LENGTH) * 10000) / 100;
 
 const BASIC_SKILLS_TEST_BLUEPRINT = [
   {
-    key: "computerDesktopBasics",
-    category: "Computer and desktop basics",
-    count: 2,
-    domains: [
-      "Computer & Device Basics",
-      "Operating System & Desktop Navigation",
-    ],
+    key: "deviceFileOperations",
+    category: "Device and file operations",
+    count: 7,
+    domains: ["Device & File Operations"],
   },
   {
-    key: "fileFolderManagement",
-    category: "File and folder management",
-    count: 1,
-    domains: ["File & Folder Management"],
+    key: "informationSearch",
+    category: "Information and search",
+    count: 4,
+    domains: ["Information & Search"],
   },
   {
-    key: "internetEmail",
-    category: "Internet and email",
-    count: 2,
-    domains: [
-      "Internet & Information Search",
-      "Email & Digital Communication",
-    ],
+    key: "communicationOnlineLearning",
+    category: "Communication and online learning",
+    count: 5,
+    domains: ["Communication & Online Learning"],
   },
   {
-    key: "onlineSafetyPrivacy",
-    category: "Online safety and privacy",
-    count: 2,
-    domains: ["Online Safety, Privacy & Security"],
+    key: "safetyPrivacy",
+    category: "Safety and privacy",
+    count: 4,
+    domains: ["Safety & Privacy"],
   },
   {
-    key: "productivityTools",
-    category: "Productivity tools",
-    count: 1,
-    domains: [
-      "Word Processing & Documents",
-      "Spreadsheets & Data Basics",
-      "Presentations & Digital Content Creation",
-    ],
+    key: "productivityContent",
+    category: "Productivity and content",
+    count: 5,
+    domains: ["Productivity & Content"],
   },
   {
-    key: "onlineFormsMobileServices",
-    category: "Online forms, mobile, and digital services",
-    count: 1,
-    domains: [
-      "Online Forms & Digital Services",
-      "Mobile, Connectivity & Digital Services",
-    ],
-  },
-  {
-    key: "troubleshootingProblemSolving",
-    category: "Troubleshooting and problem solving",
-    count: 1,
-    domains: ["Problem Solving & Troubleshooting"],
+    key: "troubleshootingConnectivity",
+    category: "Troubleshooting and connectivity",
+    count: 5,
+    domains: ["Troubleshooting & Connectivity"],
   },
 ];
 
@@ -70,10 +53,18 @@ function getBlueprintTotalQuestions() {
   );
 }
 
+// Attempts store the percentage threshold they were scored against; this gives the pass mark in points.
+function getAttemptPassMark(attempt) {
+  if (!attempt?.maxScore) return null;
+  return Math.round((Number(attempt.passingPercentage || 0) * Number(attempt.maxScore)) / 100);
+}
+
 module.exports = {
   BASIC_SKILLS_TEST_BLUEPRINT,
   BASIC_SKILLS_TEST_LENGTH,
+  BASIC_SKILLS_TEST_PASS_MARK,
   BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
   BASIC_SKILLS_TEST_VERSION,
+  getAttemptPassMark,
   getBlueprintTotalQuestions,
 };

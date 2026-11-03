@@ -1,0 +1,845 @@
+{
+  "generatedFrom": "Digital Futures registration portal question definitions",
+  "program": "O8nC4YThWdy",
+  "trackedEntityType": "vxZAPHlwbsb",
+  "attributes": {
+    "APPLICATION_REFERENCE": "aTLkthPLJg6",
+    "PARTICIPANT_CODE": "a6RwPxpPEqS",
+    "APPLICATION_STATUS": "nnjJHmX6zhg",
+    "FIRST_NAME": "bdGby4OPMae",
+    "MIDDLE_NAME": "jTicykUL9Ke",
+    "LAST_NAME": "woeAHgMMc5w",
+    "SEX": "G0PLQVJKuQW",
+    "DATE_OF_BIRTH": "etdAtb7GhB1",
+    "NATIONAL_ID_TYPE": "NuwTKQYHIsz",
+    "NATIONAL_ID_NUMBER": "wvf03udrFTC",
+    "NATIONAL_ID_CARD_NUMBER": "D7h8G879WHf",
+    "CONTACT_NUMBER": "eCebwyZtUiV",
+    "ALTERNATIVE_CONTACT_NUMBER": "OXjOw6zCcbl",
+    "EMAIL": "eZ9T3MvdyrA",
+    "PREFERRED_CONTACT_METHOD": "NVLdOGGb7nH",
+    "PREFERRED_CONTACT_METHOD_OTHER": "Fmh2c0Jospi",
+    "COUNTRY": "MTnNHKypZjG",
+    "COUNTY": "xFbUa4qjcSc",
+    "SUB_COUNTY": "nFDrsQxWnHg",
+    "REGION": "jugIzvIQBbI",
+    "STATE": "tS4i7gExWrd",
+    "DISTRICT": "kCYvRFVs6jg",
+    "TOWN": "ykI8FLDxw4p"
+  },
+  "stages": {
+    "APPLICATION": {
+      "id": "RbiwVu6tELR",
+      "name": "Application",
+      "dataElements": {
+        "APPLICATION_FORM_VERSION": "Q3zInnsm3G6",
+        "COURSE_APPLIED_FOR": "k7u7OREx9Ly",
+        "REGISTRATION_CONSENT": "p2lfNpZjBh2",
+        "CONSENT_VERSION": "oBsWqtOc5Ds",
+        "CONSENT_NAME_ID_CODE": "MxAc3zzOXmG",
+        "CONSENT_SIGNED_DATE": "nMfzM6xBWeW",
+        "CONSENT_SIGNATURE_METHOD": "i23OaVz10te",
+        "CONSENT_SIGNATURE_DATA": "Z4T7iQasFkZ",
+        "CONSENT_COMPLETED_SELF": "EdEJuweUumC",
+        "CONSENT_ASSISTANT_NAME": "TQkarLdgsrE",
+        "CONSENT_ASSISTANT_RELATIONSHIP": "HtNB1dUscoW",
+        "CONSENT_ASSISTANT_RELATIONSHIP_OTHER": "ebjyasauich",
+        "CONSENT_ASSISTANCE_TYPE_OTHER": "mg1biikPOul",
+        "CONSENT_ASSISTANCE_LANGUAGE": "K12k3pSgNlL",
+        "CONSENT_ASSISTANT_SIGNATURE_METHOD": "PtMUtiOqYPb",
+        "CONSENT_ASSISTANT_SIGNATURE_DATA": "LkrzOy7rfVP",
+        "CONSENT_ASSISTANCE_DATE": "MPFekMuf3iP",
+        "TRAINING_AVAILABILITY": "gYs1msmrefW",
+        "ACCOMMODATION_REQUIRED": "I15P6pGIkWn",
+        "EDUCATION_LEVEL": "vQnfPENurJG",
+        "EDUCATION_LEVEL_OTHER": "w3U1Tuua4jU",
+        "COURSE_STUDIED": "tfZBQsOzy0Z",
+        "HAS_DISABILITY": "omb5oI6lRZ8",
+        "OTHER_DISABILITY_TYPE": "m6mFwcnZdHJ",
+        "ACCESSIBILITY_NEEDS_OTHER": "HtoRDrO3aaN",
+        "PREVIOUS_SIGHTSAVERS_TRAINING": "jbtLh8eZWWA",
+        "PREVIOUS_SIGHTSAVERS_TRAINING_OTHER": "Ef8ZZaxphvn",
+        "MOTIVATION": "rn8hSZdKNaA",
+        "TRAINING_START_READINESS": "hErhjdZisKk",
+        "HEARD_ABOUT_PROJECT": "yOgxi6qxRcr",
+        "HEARD_ABOUT_PROJECT_OTHER": "qLVI1y6ZFbF",
+        "DIGITAL_SKILLS_LEVEL": "tljb379IMHW",
+        "DIGITAL_ENTERPRISE_TYPE": "JAL02UkdLEz",
+        "DIGITAL_NATIVE_CATEGORY": "yIfDy0y16o3",
+        "DIGITAL_TRANSFORMED_CATEGORY": "FdHtr6EPESI",
+        "BUSINESS_STAGE": "VfjfHnrUsdD",
+        "BUSINESS_DESCRIPTION": "eqDHGZJfSov",
+        "DEVICE_ACCESS": "z1L23jbLPC6",
+        "DEVICE_ACCESS_HOURS": "ZC0kDk1oXdE",
+        "INTERNET_ACCESS": "iBcKtuA59ff",
+        "INTERNET_RELIABILITY": "iny1VUHI7o0",
+        "POWER_SUPPLY_RELIABILITY": "iT4WZ1MY8HQ",
+        "WEEKDAY_POWER_HOURS": "VKrOXy0UQyR",
+        "ALTERNATIVE_POWER_LOCATION": "LzSeIUvEUyv",
+        "ELIGIBILITY_SCREENING_STATUS": "btAdg8KfjzT",
+        "ELIGIBILITY_REASON": "dgJEH1qeTFB",
+        "AGE_AT_APPLICATION": "Qeg7uerEXsC"
+      },
+      "multiSelect": {
+        "CONSENT_ASSISTANCE_TYPES": {
+          "Read the information aloud": "uuObR5542iO",
+          "Explained the information": "x5LSMNad1OS",
+          "Translated or interpreted the information": "ifUCfhhUQtO",
+          "Sign-language interpretation": "ULbuNhaXoSZ",
+          "Assisted the applicant to enter their responses": "Vuq6rVAWrlu",
+          "Other, please specify": "pA1l3m1U5sC"
+        },
+        "DISABILITY_TYPE": {
+          "Physical disability (mobility impairments, short stature, cerebral palsy, spina bifida)": "x4P63RI95jC",
+          "Blind": "Of0LkRrRRkV",
+          "Low vision": "MP3QBulbkUc",
+          "Deaf": "bLTYVpPQabu",
+          "Hard of hearing": "wjh6ajzaxfa",
+          "Deaf-blindness": "CYXfeecwpA8",
+          "Speech or communication disability": "ZXPoHGjyP2t",
+          "Intellectual disability (incl. Down Syndrome)": "Ypv9ge4eiQq",
+          "Neurodiverse (incl. Autism, ADHD, dyslexia, epilepsy, learning disabilities)": "j65uFi50ibG",
+          "Psychosocial disability": "pxDtyphj2RZ",
+          "Albinism": "nblAKgKdeH7",
+          "Other": "VEL0GDBd3Ly"
+        },
+        "ACCESSIBILITY_NEEDS": {
+          "Sign language interpreter": "HLEFc1tgDED",
+          "Video captions": "STRS9tPvAGl",
+          "Screen reader": "YyblaGfoVki",
+          "Large print": "EpTgbh7ybFL",
+          "Soft copy material (e.g. slides sent before a presentation)": "PvvVV3sol9X",
+          "Braille materials": "tjUeXNRnjkM",
+          "Firm and non-slip floors": "WA61aUWy8qX",
+          "Proper lighting": "iC4WTFxJE7C",
+          "Wheelchair-accessible environment (adequate spacing, accessible washrooms)": "qy84qitYiM1",
+          "Support person (additional support to understand learning material)": "no8OtE6KfK3",
+          "Additional time": "oMkJbx4queD",
+          "Flexible time": "ABoBVCJVCOR",
+          "Other": "kYFLDF9gyNv"
+        },
+        "PREVIOUS_SIGHTSAVERS_TRAINING_TYPES": {
+          "Sightsavers project Accenture/Fundaula Skills to Succeed (S2S) employability soft skills training online": "sxnp6A5LR3J",
+          "Instructor led (in person) employability soft skills training through Sightsavers project": "PhLweM0bfcd",
+          "Sightsavers IT Bridge Academy CCNA": "aIE25bHq1el",
+          "Sightsavers IT Bridge Academy CCST": "DdABsJKmtkg",
+          "Entrepreneurship training (in person) through Sightsavers project": "RQFIQWXFY0C",
+          "Mentoring through Sightsavers project": "JL2SXQokZRK",
+          "Internship/work experience placement facilitated through Sightsavers project": "TdcsGrH0bJU",
+          "Other": "i1Ga6I9TdQq",
+          "Other (allow free text response for the detail)": "mjrmjusktdY"
+        },
+        "DIGITAL_ENTERPRISE_CHARACTERISTICS": {
+          "Uses digital platforms for customer engagement and service delivery.": "tYf4zZcSnwa",
+          "Employs digital tools for business operations, service delivery, or management.": "dvbn6UsZAuU",
+          "Offers digitally enabled products or services.": "f1zpTWSckbc",
+          "Utilizes digital payment systems and financial technologies": "nI0nb7BxA2W",
+          "Only uses digital tools for personal use not directly for the business.": "afVkzck5HZf"
+        }
+      }
+    },
+    "SKILLS_TEST": {
+      "id": "VdJUnqy9qeF",
+      "name": "Basic IT skills test",
+      "dataElements": {
+        "SKILLS_TEST_SCORE": "GzNZ8nU1JPf",
+        "SKILLS_TEST_MAX_SCORE": "nb7K13KggCb",
+        "SKILLS_TEST_PERCENTAGE": "zTkKwmezjVt",
+        "SKILLS_TEST_PASSED": "nvM70bw6d2j",
+        "SKILLS_TEST_PASS_MARK": "kObHbGrUl0w",
+        "SKILLS_TEST_DURATION_SECONDS": "MW0yWGLQFRO",
+        "SKILLS_TEST_VERSION": "i6KT7lcWhFE"
+      },
+      "multiSelect": {}
+    },
+    "COMMITTEE_REVIEW": {
+      "id": "l9uWc2kbEjf",
+      "name": "Selection committee review",
+      "dataElements": {
+        "COMMITTEE_DECISION": "zdzATAmzbtW",
+        "COMMITTEE_COMMENTS": "yMvhqPktKQE"
+      },
+      "multiSelect": {}
+    },
+    "PARTICIPANT_REGISTRATION": {
+      "id": "lVfHiAUDaha",
+      "name": "Participant registration & baseline survey",
+      "dataElements": {
+        "M1_1": "hBIWGrLbNhu",
+        "M1_2": "sCsr6jhxqAM",
+        "M1_3": "VuWKTIxZyDu",
+        "M1_4": "P9VRgOFdvAC",
+        "M1_5": "gl0dbMhvxqk",
+        "M1_6": "Oqc3hKIuHVs",
+        "M2_1": "loGAHcg6cnG",
+        "M2_2": "kcpwfCBwZC4",
+        "M2_3": "VMIqUqaJhqh",
+        "M2_4": "p40F29icKXX",
+        "M2_5": "UWEzobv1Gel",
+        "M2_6": "YfmAqxdsCU1",
+        "M2_7": "p3dWNRjc7kN",
+        "M2_8": "qD3RudEt6cM",
+        "M3_1": "Ij6WDcBEOwu",
+        "M3_2": "zsoiOYvJx3E",
+        "M3_3": "tS5zBTXKeWz",
+        "M3_4": "AeqVkyrMVzh",
+        "M3_4A": "cLk3DGNedME",
+        "M3_SECTOR": "ZKa1icSQpG1",
+        "M3_SECTOR_OTHER": "uF3av5Q2qTL",
+        "M3_6": "Qzu9YkY3lcE",
+        "M3_7": "hAlQpUNk6vq",
+        "M3_10": "jYtpokPno7b",
+        "M3_8": "exPV0DxUhau",
+        "M3_9": "shTwYYuxqCu",
+        "M3_11": "c291KPTBj3t",
+        "M3_12A": "h4QuHbwlmc6",
+        "M3_12B": "C66IEgg4Rn1",
+        "M3_12C": "kDWJlXjh9Qv",
+        "M3_13": "y6pndPxab0X",
+        "M3_14": "Hf2B1hVEIuD",
+        "M3_15": "qH66Ntiwd8e",
+        "M3_16": "wce5iWVOHzP",
+        "M3_17": "sab4JRnYlb0",
+        "M4_1": "MelFKHunKcJ",
+        "M4_4": "CstWVhnE78v",
+        "M4_5": "wF9hogH1p3D",
+        "M4_6": "L9ep3kwvqYz",
+        "M4_7": "A8c2X8EI4As",
+        "M4_8": "ZstOBQWnm9y",
+        "M4_9": "gvJXuyVAZ78",
+        "M4_10": "UceQUqxs2a8",
+        "M5_1": "gfI1zw83J5x",
+        "M5_2": "v4L0gZUctCQ",
+        "M5_3": "Qpcf4RURUhC",
+        "M5_4": "PmTdHayHInk",
+        "M5_5": "gG9xadpfJ5O",
+        "M5_6": "L34TjFYjEaa",
+        "M5_7": "fVpRaNvhfYo",
+        "PR_CONSENT_DECISION": "FduCumXjj2b",
+        "PR_CONSENT_FULL_NAME": "pQ8SShb1cKS",
+        "PR_CONSENT_SIGNED_DATE": "U9aZO4IUkFd",
+        "PR_CONSENT_SIGNATURE_METHOD": "v6yyYnlCYsj",
+        "PR_CONSENT_SIGNATURE_DATA": "sUtU9s1oUjK",
+        "PR_CONSENT_COMPLETED_SELF": "TwV1KxS5nBN",
+        "PR_CONSENT_ASSISTANT_NAME": "uL2zzGFUigM",
+        "PR_CONSENT_ASSISTANT_RELATIONSHIP": "Y2bMd1AKmXW",
+        "PR_CONSENT_ASSISTANT_RELATIONSHIP_OTHER": "wtSCXiWUOSk",
+        "PR_CONSENT_ASSISTANCE_TYPE_OTHER": "zo3oVq24mdO",
+        "PR_CONSENT_ASSISTANCE_LANGUAGE": "YJMwU2hta42",
+        "PR_CONSENT_ASSISTANT_SIGNATURE_METHOD": "CzL84LVQeyK",
+        "PR_CONSENT_ASSISTANT_SIGNATURE_DATA": "RYb3oj3fVbP",
+        "PR_CONSENT_ASSISTANCE_DATE": "lh6LcNLl6D3"
+      },
+      "multiSelect": {
+        "M3_5": {
+          "Applied for a permit, licence or arranged funding for a business": "tTrW0oTtBtW",
+          "Looked for land, premises, machinery, supplies or farming inputs": "ORYT1UIpcxg",
+          "Asked friends, relatives or community members for help with employment": "ZRmc3YXIqO9",
+          "Registered with, or contacted, public or private employment services": "Ijh2L4vHU3G",
+          "Applied for jobs with employers": "cY4lzOGJo5w",
+          "Checked at worksites, farms, factory gates, markets or other places for work": "xHDlh5Z72q4",
+          "Placed or answered an advert in a newspaper or online": "JhxYMHjCiC6",
+          "Posted or updated a CV on a professional networking site": "qXhMBvQxCUg",
+          "None of the above": "lHD7XoMzJZA"
+        },
+        "PR_CONSENT_ASSISTANCE_TYPES": {
+          "Read the information aloud": "PIgGQzh02c0",
+          "Explained the information": "huh1ydTPL14",
+          "Translated or interpreted the information": "C4TfRpeiUz1",
+          "Sign-language interpretation": "dlFbWjUUskq",
+          "Assisted the applicant to enter their responses": "KcMMBdQDwAr",
+          "Other, please specify": "N99k0MZiJWk"
+        }
+      }
+    }
+  },
+  "optionCodes": {
+    "APPLICATION_STATUS": {
+      "Submitted": "SUBMITTED",
+      "Pending review": "PENDING_REVIEW",
+      "Ineligible": "INELIGIBLE",
+      "Eligible pending skills test": "ELIGIBLE_PENDING_SKILLS_TEST",
+      "Skills test completed pending review": "SKILLS_TEST_COMPLETED_PENDING_REVIEW",
+      "Eligible pending dhis2 sync": "ELIGIBLE_PENDING_DHIS2_SYNC",
+      "Synced to dhis2 pending review": "SYNCED_TO_DHIS2_PENDING_REVIEW",
+      "Under review": "UNDER_REVIEW",
+      "Approved for enrollment": "APPROVED_FOR_ENROLLMENT",
+      "Participant registration pending": "PARTICIPANT_REGISTRATION_PENDING",
+      "Participant registration completed pending verification": "PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION",
+      "Rejected by review committee": "REJECTED_BY_REVIEW_COMMITTEE",
+      "Enrolled in dhis2 program": "ENROLLED_IN_DHIS2_PROGRAM",
+      "Sync failed": "SYNC_FAILED"
+    },
+    "SEX": {
+      "Female": "FEMALE",
+      "Male": "MALE"
+    },
+    "NATIONAL_ID_TYPE": {
+      "Ghana Card": "GHANA_CARD",
+      "National Identification Number (NIN)": "NATIONAL_IDENTIFICATION_NUMBER_NIN",
+      "Voter’s ID Card": "VOTER_S_ID_CARD",
+      "NHIS Card": "NHIS_CARD",
+      "Driver’s Licence": "DRIVER_S_LICENCE",
+      "Passport": "PASSPORT"
+    },
+    "PREFERRED_CONTACT_METHOD": {
+      "Voice call": "VOICE_CALL",
+      "SMS": "SMS",
+      "WhatsApp text": "WHATSAPP_TEXT",
+      "WhatsApp video": "WHATSAPP_VIDEO",
+      "WhatsApp call": "WHATSAPP_CALL",
+      "Email": "EMAIL",
+      "Other": "OTHER"
+    },
+    "COUNTRY": {
+      "Kenya": "KENYA",
+      "Nigeria": "NIGERIA",
+      "Ghana": "GHANA",
+      "Zambia": "ZAMBIA"
+    },
+    "COUNTY": {
+      "Mombasa": "MOMBASA",
+      "Kwale": "KWALE",
+      "Kilifi": "KILIFI",
+      "Tana River": "TANA_RIVER",
+      "Lamu": "LAMU",
+      "Taita Taveta": "TAITA_TAVETA",
+      "Garissa": "GARISSA",
+      "Wajir": "WAJIR",
+      "Mandera": "MANDERA",
+      "Marsabit": "MARSABIT",
+      "Isiolo": "ISIOLO",
+      "Meru": "MERU",
+      "Tharaka Nithi": "THARAKA_NITHI",
+      "Embu": "EMBU",
+      "Kitui": "KITUI",
+      "Machakos": "MACHAKOS",
+      "Makueni": "MAKUENI",
+      "Nyandarua": "NYANDARUA",
+      "Nyeri": "NYERI",
+      "Kirinyaga": "KIRINYAGA",
+      "Murang’a": "MURANG_A",
+      "Kiambu": "KIAMBU",
+      "Turkana": "TURKANA",
+      "West Pokot": "WEST_POKOT",
+      "Samburu": "SAMBURU",
+      "Trans Nzoia": "TRANS_NZOIA",
+      "Uasin Gishu": "UASIN_GISHU",
+      "Elgeyo Marakwet": "ELGEYO_MARAKWET",
+      "Nandi": "NANDI",
+      "Baringo": "BARINGO",
+      "Laikipia": "LAIKIPIA",
+      "Nakuru": "NAKURU",
+      "Narok": "NAROK",
+      "Kajiado": "KAJIADO",
+      "Kericho": "KERICHO",
+      "Bomet": "BOMET",
+      "Kakamega": "KAKAMEGA",
+      "Vihiga": "VIHIGA",
+      "Bungoma": "BUNGOMA",
+      "Busia": "BUSIA",
+      "Siaya": "SIAYA",
+      "Kisumu": "KISUMU",
+      "Homa Bay": "HOMA_BAY",
+      "Migori": "MIGORI",
+      "Kisii": "KISII",
+      "Nyamira": "NYAMIRA",
+      "Nairobi": "NAIROBI"
+    },
+    "REGION": {
+      "Ahafo": "AHAFO",
+      "Ashanti": "ASHANTI",
+      "Bono": "BONO",
+      "Bono East": "BONO_EAST",
+      "Central": "CENTRAL",
+      "Eastern": "EASTERN",
+      "Greater Accra": "GREATER_ACCRA",
+      "North East": "NORTH_EAST",
+      "Northern": "NORTHERN",
+      "Oti": "OTI",
+      "Savannah": "SAVANNAH",
+      "Upper East": "UPPER_EAST",
+      "Upper West": "UPPER_WEST",
+      "Volta": "VOLTA",
+      "Western": "WESTERN",
+      "Western North": "WESTERN_NORTH"
+    },
+    "STATE": {
+      "Abuja Federal Capital Territory": "ABUJA_FEDERAL_CAPITAL_TERRITORY",
+      "Abia": "ABIA",
+      "Adamawa": "ADAMAWA",
+      "Akwa Ibom": "AKWA_IBOM",
+      "Anambra": "ANAMBRA",
+      "Bauchi": "BAUCHI",
+      "Bayelsa": "BAYELSA",
+      "Benue": "BENUE",
+      "Borno": "BORNO",
+      "Cross River": "CROSS_RIVER",
+      "Delta": "DELTA",
+      "Ebonyi": "EBONYI",
+      "Edo": "EDO",
+      "Ekiti": "EKITI",
+      "Enugu": "ENUGU",
+      "Gombe": "GOMBE",
+      "Imo": "IMO",
+      "Jigawa": "JIGAWA",
+      "Kaduna": "KADUNA",
+      "Kano": "KANO",
+      "Katsina": "KATSINA",
+      "Kebbi": "KEBBI",
+      "Kogi": "KOGI",
+      "Kwara": "KWARA",
+      "Lagos": "LAGOS",
+      "Nasarawa": "NASARAWA",
+      "Niger": "NIGER",
+      "Ogun": "OGUN",
+      "Ondo": "ONDO",
+      "Osun": "OSUN",
+      "Oyo": "OYO",
+      "Plateau": "PLATEAU",
+      "Rivers": "RIVERS",
+      "Sokoto": "SOKOTO",
+      "Taraba": "TARABA",
+      "Yobe": "YOBE",
+      "Zamfara": "ZAMFARA",
+      "Central Province": "CENTRAL_PROVINCE",
+      "Copperbelt Province": "COPPERBELT_PROVINCE",
+      "Eastern Province": "EASTERN_PROVINCE",
+      "Luapula Province": "LUAPULA_PROVINCE",
+      "Lusaka Province": "LUSAKA_PROVINCE",
+      "Muchiga Province": "MUCHIGA_PROVINCE",
+      "North-Western Province": "NORTH_WESTERN_PROVINCE",
+      "Northern Province": "NORTHERN_PROVINCE",
+      "Southern Province": "SOUTHERN_PROVINCE",
+      "Western Province": "WESTERN_PROVINCE"
+    },
+    "COURSE_APPLIED_FOR": {
+      "Physical Academy": "PHYSICAL_ACADEMY",
+      "Virtual Academy": "VIRTUAL_ACADEMY",
+      "Digital Entrepreneurship": "DIGITAL_ENTREPRENEURSHIP"
+    },
+    "REGISTRATION_CONSENT": {
+      "Yes, I consent": "YES_I_CONSENT",
+      "No, I do NOT consent": "NO_I_DO_NOT_CONSENT"
+    },
+    "CONSENT_SIGNATURE_METHOD": {
+      "Drawn": "DRAWN",
+      "Typed": "TYPED"
+    },
+    "CONSENT_COMPLETED_SELF": {
+      "Yes, I completed and understood the consent section myself.": "YES_I_COMPLETED_AND_UNDERSTOOD_THE_CONSENT__C3FCF9",
+      "No, someone read, explained or interpreted the consent information for me.": "NO_SOMEONE_READ_EXPLAINED_OR_INTERPRETED_TH_73B1F2"
+    },
+    "CONSENT_ASSISTANT_RELATIONSHIP": {
+      "Family member": "FAMILY_MEMBER",
+      "Friend": "FRIEND",
+      "Support person or personal assistant": "SUPPORT_PERSON_OR_PERSONAL_ASSISTANT",
+      "Sign-language interpreter": "SIGN_LANGUAGE_INTERPRETER",
+      "Language interpreter": "LANGUAGE_INTERPRETER",
+      "Programme or partner staff member": "PROGRAMME_OR_PARTNER_STAFF_MEMBER",
+      "Other, please specify": "OTHER_PLEASE_SPECIFY"
+    },
+    "CONSENT_ASSISTANT_SIGNATURE_METHOD": {
+      "Drawn": "DRAWN",
+      "Typed": "TYPED"
+    },
+    "EDUCATION_LEVEL": {
+      "No Education": "NO_EDUCATION",
+      "Pre-Primary": "PRE_PRIMARY",
+      "Primary": "PRIMARY",
+      "Junior Secondary": "JUNIOR_SECONDARY",
+      "Senior Secondary": "SENIOR_SECONDARY",
+      "Certificate / Vocational / TVET": "CERTIFICATE_VOCATIONAL_TVET",
+      "Diploma /Ordinary National Diploma (OND)": "DIPLOMA_ORDINARY_NATIONAL_DIPLOMA_OND",
+      "Highter National Diploma (HND)": "HIGHTER_NATIONAL_DIPLOMA_HND",
+      "Bachelor's degree": "BACHELOR_S_DEGREE",
+      "Postgraduate": "POSTGRADUATE",
+      "Other": "OTHER"
+    },
+    "TRAINING_START_READINESS": {
+      "Immediately": "IMMEDIATELY",
+      "Within 1 month": "WITHIN_1_MONTH",
+      "In 1–3 months": "IN_1_3_MONTHS",
+      "More than 3 months from now": "MORE_THAN_3_MONTHS_FROM_NOW"
+    },
+    "HEARD_ABOUT_PROJECT": {
+      "Television": "TELEVISION",
+      "Radio": "RADIO",
+      "Social Media": "SOCIAL_MEDIA",
+      "Friends / Relatives": "FRIENDS_RELATIVES",
+      "Organisation of Persons with Disabilities (OPD)": "ORGANISATION_OF_PERSONS_WITH_DISABILITIES_OPD",
+      "Flyer/Poster/Banner": "FLYER_POSTER_BANNER",
+      "Other": "OTHER"
+    },
+    "DIGITAL_SKILLS_LEVEL": {
+      "Beginner (I need a lot of help using these applications)": "BEGINNER_I_NEED_A_LOT_OF_HELP_USING_THESE_A_AA25B3",
+      "Basic (I can do simple things using these applications)": "BASIC_I_CAN_DO_SIMPLE_THINGS_USING_THESE_AP_16B84E",
+      "Intermediate (I can do most basic tasks alone)": "INTERMEDIATE_I_CAN_DO_MOST_BASIC_TASKS_ALONE",
+      "Advanced (I can work without help)": "ADVANCED_I_CAN_WORK_WITHOUT_HELP"
+    },
+    "DIGITAL_ENTERPRISE_TYPE": {
+      "Digital-native business: The business provides a digital product or service that is created and delivered mainly through technology, such as software, an app, an online platform, digital content or an IT service.": "DIGITAL_NATIVE_BUSINESS_THE_BUSINESS_PROVID_BC3D16",
+      "Traditional business using digital tools: The business provides physical products or in-person services and uses, or plans to use, digital tools for activities such as marketing, sales, payments, customer service or recordkeeping": "TRADITIONAL_BUSINESS_USING_DIGITAL_TOOLS_TH_5A49DE"
+    },
+    "DIGITAL_NATIVE_CATEGORY": {
+      "Software development and IT services": "SOFTWARE_DEVELOPMENT_AND_IT_SERVICES",
+      "Digital content creation and management": "DIGITAL_CONTENT_CREATION_AND_MANAGEMENT",
+      "E-commerce platforms and digital marketplaces": "E_COMMERCE_PLATFORMS_AND_DIGITAL_MARKETPLACES",
+      "Digital marketing and social media services": "DIGITAL_MARKETING_AND_SOCIAL_MEDIA_SERVICES",
+      "Mobile applications and solutions": "MOBILE_APPLICATIONS_AND_SOLUTIONS",
+      "Web development and hosting services": "WEB_DEVELOPMENT_AND_HOSTING_SERVICES",
+      "Digital educational content and e-learning": "DIGITAL_EDUCATIONAL_CONTENT_AND_E_LEARNING",
+      "Digital financial services": "DIGITAL_FINANCIAL_SERVICES"
+    },
+    "DIGITAL_TRANSFORMED_CATEGORY": {
+      "Retail businesses with e-commerce integration": "RETAIL_BUSINESSES_WITH_E_COMMERCE_INTEGRATION",
+      "Traditional services with digital delivery channels": "TRADITIONAL_SERVICES_WITH_DIGITAL_DELIVERY__09D0AE",
+      "Manufacturing with digital inventory and order management": "MANUFACTURING_WITH_DIGITAL_INVENTORY_AND_OR_01FBD2",
+      "Agriculture with digital market access and management systems": "AGRICULTURE_WITH_DIGITAL_MARKET_ACCESS_AND__37D15A",
+      "Professional services with digital client management": "PROFESSIONAL_SERVICES_WITH_DIGITAL_CLIENT_M_3F16C6",
+      "Traditional education with digital delivery components": "TRADITIONAL_EDUCATION_WITH_DIGITAL_DELIVERY_4F7044",
+      "Product or service delivery with digital tools (e.g. photographer/graphic designer.": "PRODUCT_OR_SERVICE_DELIVERY_WITH_DIGITAL_TO_A3A25E"
+    },
+    "BUSINESS_STAGE": {
+      "Idea stage: I have identified a business idea, but I have not yet developed or tested the product or service.": "IDEA_STAGE_I_HAVE_IDENTIFIED_A_BUSINESS_IDE_BEA269",
+      "Testing stage: I am developing or testing the product or service. I may have spoken to potential customers, created a sample or prototype, or tested the idea on a small scale, but I have not yet launched the business.": "TESTING_STAGE_I_AM_DEVELOPING_OR_TESTING_TH_2ACFA9",
+      "Early-stage business: I have launched the business and started offering the product or service to customers. I have made some sales, but the sales may still be small or irregular.": "EARLY_STAGE_BUSINESS_I_HAVE_LAUNCHED_THE_BU_16A36F",
+      "Growing business: My business has regular customers and sales. I am working to increase sales, reach more customers, improve operations or grow the team.": "GROWING_BUSINESS_MY_BUSINESS_HAS_REGULAR_CU_84AD98",
+      "Expanding business: My business is established and is entering new markets or locations, introducing additional products or services, or seeking significant investment to expand.": "EXPANDING_BUSINESS_MY_BUSINESS_IS_ESTABLISH_236373"
+    },
+    "DEVICE_ACCESS": {
+      "Tablet": "TABLET",
+      "Smartphone": "SMARTPHONE",
+      "Laptop": "LAPTOP",
+      "Desktop Computer": "DESKTOP_COMPUTER",
+      "None of the above": "NONE_OF_THE_ABOVE"
+    },
+    "DEVICE_ACCESS_HOURS": {
+      "Less than 1 hour": "LESS_THAN_1_HOUR",
+      "1-3 hours": "1_3_HOURS",
+      "4-6 hours": "4_6_HOURS",
+      "7 hours or more": "7_HOURS_OR_MORE"
+    },
+    "INTERNET_ACCESS": {
+      "Yes": "YES",
+      "No": "NO",
+      "Maybe": "MAYBE"
+    },
+    "INTERNET_RELIABILITY": {
+      "Reliable": "RELIABLE",
+      "On and Off": "ON_AND_OFF",
+      "Rare/None": "RARE_NONE"
+    },
+    "POWER_SUPPLY_RELIABILITY": {
+      "Yes, reliably": "YES_RELIABLY",
+      "Sometimes – it varies by day": "SOMETIMES_IT_VARIES_BY_DAY",
+      "Rarely – it is unpredictable": "RARELY_IT_IS_UNPREDICTABLE",
+      "No": "NO"
+    },
+    "WEEKDAY_POWER_HOURS": {
+      "Less than 2 hours": "LESS_THAN_2_HOURS",
+      "2-6 hours": "2_6_HOURS",
+      "6-12 hours": "6_12_HOURS",
+      "12-18 hours": "12_18_HOURS",
+      "18-24 hours": "18_24_HOURS"
+    },
+    "ALTERNATIVE_POWER_LOCATION": {
+      "Yes – within walking distance": "YES_WITHIN_WALKING_DISTANCE",
+      "Yes – but it requires transport": "YES_BUT_IT_REQUIRES_TRANSPORT",
+      "No": "NO"
+    },
+    "ELIGIBILITY_SCREENING_STATUS": {
+      "Eligible": "ELIGIBLE",
+      "Not eligible": "NOT_ELIGIBLE",
+      "Pending review": "PENDING_REVIEW"
+    },
+    "COMMITTEE_DECISION": {
+      "Selected": "SELECTED",
+      "Not selected": "NOT_SELECTED",
+      "Waitlisted": "WAITLISTED",
+      "Pending additional verification": "PENDING_VERIFICATION"
+    },
+    "M1_1": {
+      "Yes": "YES",
+      "No": "NO",
+      "Not Applicable": "NOT_APPLICABLE"
+    },
+    "M1_2": {
+      "Yes": "YES",
+      "No": "NO",
+      "Not applicable": "NOT_APPLICABLE"
+    },
+    "M2_1": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot see at all": "CANNOT_SEE_AT_ALL",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_2": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot hear at all": "CANNOT_HEAR_AT_ALL",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_3": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot walk or climb at all": "CANNOT_WALK_OR_CLIMB_AT_ALL",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_4": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot remember/concentrate at all": "CANNOT_REMEMBER_CONCENTRATE_AT_ALL",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_5": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot wash or dress at all l": "CANNOT_WASH_OR_DRESS_AT_ALL_L",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_6": {
+      "No difficulty": "NO_DIFFICULTY",
+      "Some difficulty": "SOME_DIFFICULTY",
+      "A lot of difficulty": "A_LOT_OF_DIFFICULTY",
+      "Cannot communicate at all": "CANNOT_COMMUNICATE_AT_ALL",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_7": {
+      "Never": "NEVER",
+      "A few times a year": "A_FEW_TIMES_A_YEAR",
+      "Monthly": "MONTHLY",
+      "Weekly": "WEEKLY",
+      "Daily": "DAILY",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M2_8": {
+      "Never": "NEVER",
+      "A few times a year": "A_FEW_TIMES_A_YEAR",
+      "Monthly": "MONTHLY",
+      "Weekly": "WEEKLY",
+      "Daily": "DAILY",
+      "Refuse to answer": "REFUSE_TO_ANSWER",
+      "Don't know": "DON_T_KNOW"
+    },
+    "M3_1": {
+      "Single": "SINGLE",
+      "Married / cohabiting": "MARRIED_COHABITING",
+      "Separated / divorced": "SEPARATED_DIVORCED",
+      "Widowed": "WIDOWED",
+      "Other": "OTHER"
+    },
+    "M3_4": {
+      "Working and receive a wage": "WORKING_AND_RECEIVE_A_WAGE",
+      "Working but receive payment in kind": "WORKING_BUT_RECEIVE_PAYMENT_IN_KIND",
+      "Self-employed": "SELF_EMPLOYED",
+      "Unemployed and looking for employment": "UNEMPLOYED_AND_LOOKING_FOR_EMPLOYMENT",
+      "Unemployed and looking to start a business / be self-employed": "UNEMPLOYED_AND_LOOKING_TO_START_A_BUSINESS__099CD5",
+      "Unemployed and not looking for employment": "UNEMPLOYED_AND_NOT_LOOKING_FOR_EMPLOYMENT",
+      "Other": "OTHER"
+    },
+    "M3_SECTOR": {
+      "Agrifood Systems": "AGRIFOOD_SYSTEMS",
+      "Education": "EDUCATION",
+      "Digital": "DIGITAL",
+      "Health": "HEALTH",
+      "Manufacturing": "MANUFACTURING",
+      "Tourism": "TOURISM",
+      "Creatives": "CREATIVES",
+      "Other": "OTHER"
+    },
+    "M3_6": {
+      "I do not have one": "I_DO_NOT_HAVE_ONE",
+      "Oral contract, unlimited duration (permanent)": "ORAL_CONTRACT_UNLIMITED_DURATION_PERMANENT",
+      "Oral contract, limited duration (temporary)": "ORAL_CONTRACT_LIMITED_DURATION_TEMPORARY",
+      "Written contract, unlimited duration (permanent)": "WRITTEN_CONTRACT_UNLIMITED_DURATION_PERMANENT",
+      "Written contract, limited duration (temporary)": "WRITTEN_CONTRACT_LIMITED_DURATION_TEMPORARY",
+      "Do not know": "DO_NOT_KNOW"
+    },
+    "M3_7": {
+      "Monthly": "MONTHLY",
+      "Weekly": "WEEKLY",
+      "Daily": "DAILY"
+    },
+    "M3_11": {
+      "Yes": "YES",
+      "No": "NO"
+    },
+    "M3_14": {
+      "Myself only": "MYSELF_ONLY",
+      "Less than 10": "LESS_THAN_10",
+      "10–49": "10_49",
+      "Over 49": "OVER_49"
+    },
+    "M3_15": {
+      "1": "1",
+      "2": "2",
+      "3": "3",
+      "4": "4",
+      "5": "5",
+      "6": "6",
+      "7": "7",
+      "8": "8",
+      "9": "9",
+      "10": "10"
+    },
+    "M3_16": {
+      "Not enough to cover our needs, we must borrow": "NOT_ENOUGH_TO_COVER_OUR_NEEDS_WE_MUST_BORROW",
+      "Not enough to cover our needs, we use savings": "NOT_ENOUGH_TO_COVER_OUR_NEEDS_WE_USE_SAVINGS",
+      "Just enough to cover our needs": "JUST_ENOUGH_TO_COVER_OUR_NEEDS",
+      "Enough to cover our needs, we save a little": "ENOUGH_TO_COVER_OUR_NEEDS_WE_SAVE_A_LITTLE",
+      "Enough to cover our needs, we are building savings": "ENOUGH_TO_COVER_OUR_NEEDS_WE_ARE_BUILDING_SAVINGS"
+    },
+    "M3_17": {
+      "Less than adequate food for household needs": "LESS_THAN_ADEQUATE_FOOD_FOR_HOUSEHOLD_NEEDS",
+      "Just adequate food for household needs": "JUST_ADEQUATE_FOOD_FOR_HOUSEHOLD_NEEDS",
+      "More than adequate food for household needs": "MORE_THAN_ADEQUATE_FOOD_FOR_HOUSEHOLD_NEEDS"
+    },
+    "M4_1": {
+      "I am looking to get a paid job": "I_AM_LOOKING_TO_GET_A_PAID_JOB",
+      "I am currently working but want to improve my working conditions and / or pay": "I_AM_CURRENTLY_WORKING_BUT_WANT_TO_IMPROVE__2C7F11",
+      "I am looking to start a business": "I_AM_LOOKING_TO_START_A_BUSINESS",
+      "I want to grow my current business": "I_WANT_TO_GROW_MY_CURRENT_BUSINESS"
+    },
+    "M4_4": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_5": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_6": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_7": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_8": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_9": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M4_10": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE"
+    },
+    "M5_1": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_2": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_3": {
+      "Strongly Disagree": "STRONGLY_DISAGREE",
+      "Disagree": "DISAGREE",
+      "Neutral": "NEUTRAL",
+      "Agree": "AGREE",
+      "Strongly Agree": "STRONGLY_AGREE",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_4": {
+      "Never": "NEVER",
+      "Once": "ONCE",
+      "A few times": "A_FEW_TIMES",
+      "Often": "OFTEN",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_5": {
+      "Never": "NEVER",
+      "Once": "ONCE",
+      "A few times": "A_FEW_TIMES",
+      "Often": "OFTEN",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_6": {
+      "Never": "NEVER",
+      "Once": "ONCE",
+      "A few times": "A_FEW_TIMES",
+      "Often": "OFTEN",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "M5_7": {
+      "Never": "NEVER",
+      "Once": "ONCE",
+      "A few times": "A_FEW_TIMES",
+      "Often": "OFTEN",
+      "Refuse to answer": "REFUSE_TO_ANSWER"
+    },
+    "PR_CONSENT_DECISION": {
+      "Yes, I consent": "YES_I_CONSENT",
+      "No, I do NOT consent": "NO_I_DO_NOT_CONSENT",
+      "I would like someone from the programme to explain this information before I decide": "I_WOULD_LIKE_SOMEONE_FROM_THE_PROGRAMME_TO__7CE056"
+    },
+    "PR_CONSENT_SIGNATURE_METHOD": {
+      "Drawn": "DRAWN",
+      "Typed": "TYPED"
+    },
+    "PR_CONSENT_COMPLETED_SELF": {
+      "Yes, I completed and understood the consent section myself.": "YES_I_COMPLETED_AND_UNDERSTOOD_THE_CONSENT__C3FCF9",
+      "No, someone read, explained or interpreted the consent information for me.": "NO_SOMEONE_READ_EXPLAINED_OR_INTERPRETED_TH_73B1F2"
+    },
+    "PR_CONSENT_ASSISTANT_RELATIONSHIP": {
+      "Family member": "FAMILY_MEMBER",
+      "Friend": "FRIEND",
+      "Support person or personal assistant": "SUPPORT_PERSON_OR_PERSONAL_ASSISTANT",
+      "Sign-language interpreter": "SIGN_LANGUAGE_INTERPRETER",
+      "Language interpreter": "LANGUAGE_INTERPRETER",
+      "Programme or partner staff member": "PROGRAMME_OR_PARTNER_STAFF_MEMBER",
+      "Other, please specify": "OTHER_PLEASE_SPECIFY"
+    },
+    "PR_CONSENT_ASSISTANT_SIGNATURE_METHOD": {
+      "Drawn": "DRAWN",
+      "Typed": "TYPED"
+    }
+  }
+}

@@ -528,7 +528,27 @@ const MODULES = [
   },
 ];
 
+// Consent answers saved with the participant registration form (also used for the DHIS2 metadata).
+const CONSENT_RESPONSE_DEFINITIONS = [
+  ["PR_CONSENT_DECISION", "Registration consent decision", "TEXT"],
+  ["PR_CONSENT_FULL_NAME", "Full name", "TEXT"],
+  ["PR_CONSENT_SIGNED_DATE", "Consent date", "DATE"],
+  ["PR_CONSENT_SIGNATURE_METHOD", "Participant signature method", "TEXT"],
+  ["PR_CONSENT_SIGNATURE_DATA", "Participant electronic signature", "LONG_TEXT"],
+  ["PR_CONSENT_COMPLETED_SELF", "Did you complete this consent section yourself?", "TEXT"],
+  ["PR_CONSENT_ASSISTANT_NAME", "Full name of person providing assistance", "TEXT"],
+  ["PR_CONSENT_ASSISTANT_RELATIONSHIP", "Relationship to the applicant", "TEXT"],
+  ["PR_CONSENT_ASSISTANT_RELATIONSHIP_OTHER", "Other relationship", "TEXT"],
+  ["PR_CONSENT_ASSISTANCE_TYPES", "Type of assistance provided", "MULTI_SELECT"],
+  ["PR_CONSENT_ASSISTANCE_TYPE_OTHER", "Other assistance provided", "TEXT"],
+  ["PR_CONSENT_ASSISTANCE_LANGUAGE", "Language/communication method", "TEXT"],
+  ["PR_CONSENT_ASSISTANT_SIGNATURE_METHOD", "Assistant signature method", "TEXT"],
+  ["PR_CONSENT_ASSISTANT_SIGNATURE_DATA", "Assistant electronic signature", "LONG_TEXT"],
+  ["PR_CONSENT_ASSISTANCE_DATE", "Assistance date", "DATE"],
+];
+
 module.exports = {
+  CONSENT_RESPONSE_DEFINITIONS,
   PARTICIPANT_REGISTRATION_FORM_VERSION,
   PARTICIPANT_REGISTRATION_PATHWAYS,
   CONSENT,

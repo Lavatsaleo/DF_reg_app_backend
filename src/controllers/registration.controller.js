@@ -5,6 +5,7 @@ const {
   getApplicationQuestionsForPathway,
   getApplicationFormVersion,
 } = registrationFormQuestions;
+const { getEligibilityRules } = require("../data/pathwayEligibility");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -145,12 +146,17 @@ function normalizeBoolean(value) {
   return booleanValue === null ? value : booleanValue;
 }
 
+// A showIf may be one condition or a list of conditions, any of which shows the question.
 function isQuestionVisible(question, responses = []) {
   if (!question.showIf) return true;
+  const conditions = Array.isArray(question.showIf) ? question.showIf : [question.showIf];
+  return conditions.some((condition) => matchesShowCondition(condition, responses));
+}
 
-  const controllingAnswer = getAnswerValue(responses, question.showIf.questionCode);
-  const expectedValue = question.showIf.value;
-  const operator = question.showIf.operator;
+function matchesShowCondition(condition, responses) {
+  const controllingAnswer = getAnswerValue(responses, condition.questionCode);
+  const expectedValue = condition.value;
+  const operator = condition.operator;
 
   const normalizedAnswer = normalizeBoolean(controllingAnswer);
   const normalizedExpected = normalizeBoolean(expectedValue);
@@ -232,6 +238,15 @@ function isValidCountryPhone(value, country) {
 function isValidIdentification(value) {
   const clean = String(value || "").trim();
   return clean.length >= 3 && /^[\p{L}\p{N}\s/_.()+#&-]+$/u.test(clean);
+}
+
+function isValidNationalId(value, responses = []) {
+  const clean = String(value || "").trim();
+  const country = getAnswerValue(responses, "COUNTRY");
+
+  if (country === "Nigeria") return /^\d{11}$/.test(clean);
+  if (country === "Ghana") return /^GHA-[A-Za-z0-9-]{11}$/.test(clean);
+  return isValidIdentification(clean);
 }
 
 function isValidCardIdentification(value, responses = []) {
@@ -346,6 +361,16 @@ function validateQuestionFormats(responses = [], questions = registrationFormQue
         questionCode: question.questionCode,
         questionText: question.questionText,
         message: `${question.questionText} must contain a valid identification number.`,
+      });
+    }
+
+    if (question.validationType === "NATIONAL_ID" && !isValidNationalId(answer, responses)) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: getAnswerValue(responses, "COUNTRY") === "Nigeria"
+          ? "Your National Identification Number (NIN) must be exactly 11 digits."
+          : `${question.questionText} does not match the identification format stated in the application form.`,
       });
     }
 
@@ -603,18 +628,14 @@ async function findIncompleteDraftByIdentifier(identifier) {
   return null;
 }
 
-const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_FINAL_APPLICATION_V4_AGE33_20260930";
+const ELIGIBILITY_SCREENING_VERSION = "DIGITAL_FUTURES_COUNTRY_PAGES_20261102";
 const MIN_ELIGIBLE_AGE = 18;
 const MAX_ELIGIBLE_AGE = 45;
 const MIN_REASONABLE_AGE = Number(process.env.MIN_REASONABLE_APPLICANT_AGE || 10);
 const MAX_REASONABLE_AGE = Number(process.env.MAX_REASONABLE_APPLICANT_AGE || 100);
 
-function getAgeRangeForPathway(pathway) {
-  const normalizedPathway = normalizePathway(pathway);
-  return {
-    min: 18,
-    max: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? 45 : 33,
-  };
+function formatMonthYear(isoDate) {
+  return new Date(`${isoDate}T00:00:00Z`).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 const PUBLIC_ELIGIBILITY_FEEDBACK = {
@@ -622,13 +643,26 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     "We could not confirm your age from the information provided, so the application needs a manual check.",
   AGE_DATA_OUTLIER: () =>
     "We could not validate the age information provided, so the application needs a manual check.",
-  ACADEMY_AGE_OUTSIDE_RANGE: ({ min, max }) =>
-    `The Physical and Virtual Academy application age range is ${min}–${max} years. Unfortunately, you do not meet the age requirement.`,
-  AGE_OUTSIDE_REVIEW_RANGE: ({ min, max }) =>
-    `The application form states an age range of ${min}–${max} years. Your application has been saved and flagged for programme review.`,
+  ACADEMY_AGE_OUTSIDE_RANGE: ({ ageRangeLabel }) =>
+    `Applicants for this pathway must be aged ${ageRangeLabel}. Unfortunately, you do not meet the age requirement.`,
+  AGE_OUTSIDE_REVIEW_RANGE: ({ ageRangeLabel }) =>
+    `This pathway is for applicants aged ${ageRangeLabel}. Your application has been saved and flagged for programme review.`,
   ENTREPRENEURSHIP_AVAILABILITY_REQUIRED: () =>
-    "The Digital Entrepreneurship application requires availability for an average of 5 hours per week for a minimum period of 3 months.",
+    "The Digital Entrepreneurship programme requires you to be available for the full training period.",
+  EDUCATION_BELOW_MINIMUM: ({ minimumEducationLabel }) =>
+    `This pathway requires a completed ${minimumEducationLabel} qualification. Unfortunately, you do not meet the education requirement.`,
+  LOCATION_OUTSIDE_AREA_REVIEW: ({ locationLabel }) =>
+    `This pathway is for applicants based in ${locationLabel}, so your location needs a programme check.`,
+  EDUCATION_OTHER_REVIEW: () =>
+    "Your education level needs to be checked against the pathway requirement, so the application needs a manual check.",
+  DISABILITY_REQUIRED: () =>
+    "Digital Futures is a programme for young people with disabilities. Unfortunately, you do not meet this requirement.",
 };
+
+function getMinimumEducationLabel(levels = []) {
+  const names = levels.map((level) => level.replace(/\s*\/\s*/g, " / ").replace(/^Highter /, "Higher "));
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}` : names[0] || "";
+}
 
 function buildPublicEligibilityFeedback(reasonCodes = [], context = {}) {
   const feedback = [];
@@ -788,21 +822,29 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   const normalizedPathway = normalizePathway(pathway || getAnswerValue(responses, "COURSE_APPLIED_FOR"));
   const reasonCodes = [];
   const criterionResults = {};
-  const ageRange = getAgeRangeForPathway(normalizedPathway);
+  const country = getAnswerValue(responses, "COUNTRY");
+  const rules = getEligibilityRules(normalizedPathway, country) || { minAge: 18, maxAge: 45, education: null };
+  const ageRange = { min: rules.minAge, max: rules.maxAge };
   const ageEvidence = getAgeEvidence(responses, applicationDate);
   const disabilityEvidence = getDisabilityEvidence(responses);
   const trainingAvailability = toBoolean(getAnswerValue(responses, "TRAINING_AVAILABILITY"));
 
+  // Some countries set the upper age limit at the end of training rather than at application.
+  const ageAtMaxCheck = rules.maxAgeAt && ageEvidence.dateOfBirth
+    ? calculateAgeFromDateOfBirth(ageEvidence.dateOfBirth, new Date(`${rules.maxAgeAt}T00:00:00`))
+    : ageEvidence.ageAtApplication;
   const ageWithinRange =
     ageEvidence.ageAtApplication !== null &&
     ageEvidence.ageAtApplication >= ageRange.min &&
-    ageEvidence.ageAtApplication <= ageRange.max;
+    ageAtMaxCheck <= ageRange.max;
 
   criterionResults.age = {
     source: ageEvidence.source,
     ageAtApplication: ageEvidence.ageAtApplication,
     minEligibleAge: ageRange.min,
     maxEligibleAge: ageRange.max,
+    maxAgeCheckedAt: rules.maxAgeAt || "APPLICATION",
+    ageAtMaxCheck,
     withinStatedRange: ageWithinRange,
     outOfRangeAction: normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" ? "REVIEW" : "NOT_ELIGIBLE",
   };
@@ -815,8 +857,7 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   ) {
     reasonCodes.push("AGE_DATA_OUTLIER");
   } else if (!ageWithinRange) {
-    // Physical/Virtual Academy: maximum 33 at application so participants remain within
-    // the programme's intended age ceiling at completion. DE retains manual review.
+    // Academies reject applicants outside the age range; Digital Entrepreneurship flags them for review.
     reasonCodes.push(
       normalizedPathway === "DIGITAL_ENTREPRENEURSHIP"
         ? "AGE_OUTSIDE_REVIEW_RANGE"
@@ -824,20 +865,33 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     );
   }
 
+  // Every pathway is for people with disabilities; answering "No" ends the application.
   criterionResults.disability = {
     hasDisability: disabilityEvidence.hasDisability,
-    usedForAutomaticExclusion: false,
+    usedForAutomaticExclusion: true,
   };
+
+  if (disabilityEvidence.hasDisability === false) {
+    reasonCodes.push("DISABILITY_REQUIRED");
+  }
+
+  // A minimum completed qualification, where the country page sets one; "Other" is checked by the programme team.
+  const educationLevel = getAnswerValue(responses, "EDUCATION_LEVEL");
+  const minimumEducation = rules.education;
 
   criterionResults.education = {
     pathway: normalizedPathway,
-    educationLevel: getAnswerValue(responses, "EDUCATION_LEVEL"),
-    usedForAutomaticExclusion: false,
-    note:
-      getAnswerValue(responses, "COUNTRY") === "Nigeria"
-        ? "Final V4 source note: selection starts from HND, BSC & Postgraduate."
-        : null,
+    country,
+    educationLevel,
+    minimumEducation,
+    usedForAutomaticExclusion: Boolean(minimumEducation),
   };
+
+  if (rules.locations) {
+    const location = getAnswerValue(responses, rules.locationQuestionCode);
+    criterionResults.location = { questionCode: rules.locationQuestionCode, answer: location, allowed: rules.locations };
+    if (location && !rules.locations.includes(location)) reasonCodes.push("LOCATION_OUTSIDE_AREA_REVIEW");
+  }
 
   criterionResults.trainingAvailability = {
     pathway: normalizedPathway,
@@ -849,15 +903,27 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
         : null,
   };
 
+  if (minimumEducation && educationLevel) {
+    if (educationLevel === "Other") reasonCodes.push("EDUCATION_OTHER_REVIEW");
+    else if (!minimumEducation.includes(educationLevel)) reasonCodes.push("EDUCATION_BELOW_MINIMUM");
+  }
+
   if (normalizedPathway === "DIGITAL_ENTREPRENEURSHIP" && trainingAvailability !== true) {
     reasonCodes.push("ENTREPRENEURSHIP_AVAILABILITY_REQUIRED");
   }
 
-  const blockingReasonCodes = ["ENTREPRENEURSHIP_AVAILABILITY_REQUIRED", "ACADEMY_AGE_OUTSIDE_RANGE"];
+  const blockingReasonCodes = [
+    "ENTREPRENEURSHIP_AVAILABILITY_REQUIRED",
+    "ACADEMY_AGE_OUTSIDE_RANGE",
+    "EDUCATION_BELOW_MINIMUM",
+    "DISABILITY_REQUIRED",
+  ];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
     "AGE_DATA_OUTLIER",
     "AGE_OUTSIDE_REVIEW_RANGE",
+    "EDUCATION_OTHER_REVIEW",
+    "LOCATION_OUTSIDE_AREA_REVIEW",
   ];
 
   let screeningStatus = "ELIGIBLE";
@@ -868,7 +934,11 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
   }
 
   const isEligible = screeningStatus === "ELIGIBLE";
-  const publicFeedback = buildPublicEligibilityFeedback(reasonCodes, ageRange);
+  const publicFeedback = buildPublicEligibilityFeedback(reasonCodes, {
+    ageRangeLabel: `${ageRange.min}–${ageRange.max}${rules.maxAgeAt ? ` at the end of training (${formatMonthYear(rules.maxAgeAt)})` : ""}`,
+    locationLabel: rules.locationLabel,
+    minimumEducationLabel: getMinimumEducationLabel(minimumEducation || []),
+  });
   const applicantMessage = buildApplicantEligibilityMessage(screeningStatus, publicFeedback);
 
   const reasonMessages = {

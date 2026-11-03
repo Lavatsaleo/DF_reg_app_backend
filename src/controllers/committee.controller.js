@@ -8,6 +8,7 @@ const {
   normalizeAssignmentStatus,
 } = require("../services/committeeAssignment.service");
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
+const { getAttemptPassMark } = require("../data/basicSkillsTestQuestions");
 const { hashPassword } = require("../utils/passwordUtils");
 const {
   pathwaySupportsParticipantRegistration,
@@ -136,6 +137,7 @@ function summarizeSkillsTest(applicant) {
     percentage: attempt.percentage,
     passed: attempt.passed,
     passingPercentage: attempt.passingPercentage,
+    passMark: getAttemptPassMark(attempt),
     submittedAt: attempt.submittedAt,
     testVersion: attempt.testVersion,
   };

@@ -5,3 +5,5 @@ node_modules
 /generated/prisma
 
 Accounts.txt
+# Reference documents shared by the programme team (not part of the app)
+Working files/

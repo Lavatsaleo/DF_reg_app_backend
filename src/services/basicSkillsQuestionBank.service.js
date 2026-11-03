@@ -3,6 +3,7 @@ const prisma = require("../config/prisma");
 const {
   BASIC_SKILLS_TEST_BLUEPRINT,
   BASIC_SKILLS_TEST_LENGTH,
+  BASIC_SKILLS_TEST_VERSION,
   getBlueprintTotalQuestions,
 } = require("../data/basicSkillsTestQuestions");
 
@@ -70,48 +71,41 @@ function toPublicQuestion(attemptQuestion) {
   };
 }
 
+// Each domain must supply its full quota: topping up from other domains would distort topic coverage.
 function pickQuestionsForBlueprint(pool) {
   const selected = [];
-  const selectedIds = new Set();
 
   for (const blueprintItem of BASIC_SKILLS_TEST_BLUEPRINT) {
-    const eligibleQuestions = pool.filter(
-      (question) =>
-        blueprintItem.domains.includes(question.domain) && !selectedIds.has(question.id)
+    const eligibleQuestions = pool.filter((question) =>
+      blueprintItem.domains.includes(question.domain)
     );
 
-    const pickedQuestions = secureShuffle(eligibleQuestions).slice(0, blueprintItem.count);
-
-    pickedQuestions.forEach((question) => {
-      selected.push(question);
-      selectedIds.add(question.id);
-    });
-  }
-
-  const expectedTotal = Math.min(
-    BASIC_SKILLS_TEST_LENGTH,
-    getBlueprintTotalQuestions() || BASIC_SKILLS_TEST_LENGTH
-  );
-
-  if (selected.length < expectedTotal) {
-    const remainingQuestions = secureShuffle(
-      pool.filter((question) => !selectedIds.has(question.id))
-    );
-
-    for (const question of remainingQuestions) {
-      selected.push(question);
-      selectedIds.add(question.id);
-      if (selected.length >= expectedTotal) break;
+    if (eligibleQuestions.length < blueprintItem.count) {
+      throw new Error(
+        `The active Basic IT skills question bank has only ${eligibleQuestions.length} "${blueprintItem.category}" questions. ${blueprintItem.count} are required.`
+      );
     }
+
+    selected.push(...secureShuffle(eligibleQuestions).slice(0, blueprintItem.count));
   }
 
-  if (selected.length < expectedTotal) {
+  if (selected.length !== BASIC_SKILLS_TEST_LENGTH) {
     throw new Error(
-      `The active Basic IT skills question bank has only ${selected.length} usable questions. At least ${expectedTotal} are required.`
+      `The test blueprint draws ${selected.length} questions but the test length is ${BASIC_SKILLS_TEST_LENGTH}.`
     );
   }
 
-  return secureShuffle(selected).slice(0, expectedTotal);
+  return secureShuffle(selected);
+}
+
+// An unfinished attempt drawn before the bank or blueprint changed is redrawn from the current active bank.
+function hasCurrentQuestionSet(selectedQuestions, activePool) {
+  const activeIds = new Set(activePool.map((question) => question.id));
+
+  return (
+    selectedQuestions.length === getBlueprintTotalQuestions() &&
+    selectedQuestions.every((question) => activeIds.has(question.questionId))
+  );
 }
 
 async function getActiveQuestionPool(tx = prisma) {
@@ -126,9 +120,7 @@ async function getActiveQuestionPool(tx = prisma) {
   });
 }
 
-async function createSelectedQuestionsForAttempt(tx, attemptId) {
-  const activePool = await getActiveQuestionPool(tx);
-
+async function createSelectedQuestionsForAttempt(tx, attemptId, activePool) {
   if (!activePool.length) {
     throw new Error(
       "The Basic IT skills question bank is empty. Run npm run seed:basic-skills before issuing test invitations."
@@ -197,6 +189,7 @@ async function getOrCreateInProgressAttempt({ applicantId, invitationId = null }
           invitationId,
           attemptNumber: 1,
           status: "IN_PROGRESS",
+          testVersion: BASIC_SKILLS_TEST_VERSION,
         },
         include: {
           invitation: true,
@@ -218,8 +211,21 @@ async function getOrCreateInProgressAttempt({ applicantId, invitationId = null }
       });
     }
 
-    if (!attempt.selectedQuestions.length) {
-      const selectedQuestions = await createSelectedQuestionsForAttempt(tx, attempt.id);
+    const activePool = await getActiveQuestionPool(tx);
+
+    if (!hasCurrentQuestionSet(attempt.selectedQuestions, activePool)) {
+      if (attempt.selectedQuestions.length) {
+        await tx.basicSkillsTestAttemptQuestion.deleteMany({
+          where: { attemptId: attempt.id },
+        });
+      }
+
+      const selectedQuestions = await createSelectedQuestionsForAttempt(tx, attempt.id, activePool);
+      attempt = await tx.basicSkillsTestAttempt.update({
+        where: { id: attempt.id },
+        data: { testVersion: BASIC_SKILLS_TEST_VERSION },
+        include: { invitation: true },
+      });
       attempt = {
         ...attempt,
         selectedQuestions,
@@ -340,6 +346,9 @@ function calculateAttemptResult(selectedQuestions, submittedAnswers) {
 module.exports = {
   calculateAttemptResult,
   getOrCreateInProgressAttempt,
+  hasCurrentQuestionSet,
+  pickQuestionsForBlueprint,
+  toAttemptQuestionCreateData,
   toPublicQuestion,
   validateAttemptAnswers,
 };

@@ -49,6 +49,15 @@ async function seedBasicSkillsQuestionBank() {
     }
   }
 
+  // Only the seeded bank may be drawn: older questions are switched off but kept for past attempts.
+  const deactivated = await prisma.basicSkillsTestQuestion.updateMany({
+    where: {
+      active: true,
+      questionCode: { notIn: basicSkillsQuestionBankSeed.map((row) => row.questionCode) },
+    },
+    data: { active: false },
+  });
+
   const totalActive = await prisma.basicSkillsTestQuestion.count({
     where: { active: true },
   });
@@ -56,6 +65,7 @@ async function seedBasicSkillsQuestionBank() {
   return {
     created,
     updated,
+    deactivated: deactivated.count,
     totalSeedRows: basicSkillsQuestionBankSeed.length,
     totalActive,
   };

@@ -1575,7 +1575,7 @@ const LOCATION_HIERARCHY = {
   "Zambia": {
     "adminLevel1": {
       "questionCode": "STATE",
-      "label": "State"
+      "label": "Province"
     },
     "adminLevel2": {
       "questionCode": "DISTRICT",

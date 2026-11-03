@@ -1,7 +1,9 @@
 const prisma = require("../config/prisma");
 const {
+  BASIC_SKILLS_TEST_PASS_MARK,
   BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
   BASIC_SKILLS_TEST_VERSION,
+  getAttemptPassMark,
 } = require("../data/basicSkillsTestQuestions");
 const { hashToken } = require("../utils/tokenUtils");
 const {
@@ -66,6 +68,7 @@ function summarizeAttempt(attempt) {
     percentage: attempt.percentage,
     passed: attempt.passed,
     passingPercentage: attempt.passingPercentage,
+    passMark: getAttemptPassMark(attempt),
     submittedAt: attempt.submittedAt,
     durationSeconds: attempt.durationSeconds,
     testVersion: attempt.testVersion || BASIC_SKILLS_TEST_VERSION,
@@ -104,15 +107,16 @@ function getTestMetadata(questions) {
   return {
     title: "Basic IT Skills Test",
     instructions:
-      "Answer each question once. The result will be attached to your registration record for committee review.",
+      `Answer all ${questions.length} questions. Each question has one correct answer and there is no time limit. Your result will be attached to your application for committee review.`,
     totalQuestions: questions.length,
     maxScore: questions.reduce(
       (sum, question) => sum + Number(question.points || 1),
       0
     ),
     passingPercentage: BASIC_SKILLS_TEST_PASSING_PERCENTAGE,
+    passMark: BASIC_SKILLS_TEST_PASS_MARK,
     testVersion: BASIC_SKILLS_TEST_VERSION,
-    randomizationMode: "balanced-question-bank",
+    randomizationMode: "domain-stratified-question-bank",
     questions,
   };
 }
@@ -400,7 +404,8 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
   }
 
   const result = calculateAttemptResult(selectedQuestions, submittedAnswers);
-  const passed = result.percentage >= BASIC_SKILLS_TEST_PASSING_PERCENTAGE;
+  // A score below the pass mark is flagged for committee follow-up; it never rejects the applicant automatically.
+  const passed = result.score >= BASIC_SKILLS_TEST_PASS_MARK;
   const nextStatus = REVIEW_TERMINAL_STATUSES.includes(applicant.status)
     ? applicant.status
     : "SKILLS_TEST_COMPLETED_PENDING_REVIEW";
@@ -463,7 +468,7 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
         data: {
           applicantId: applicant.id,
           status: nextStatus,
-          note: `Basic IT skills test completed. Score: ${result.score}/${result.maxScore} (${result.percentage}%).`,
+          note: `Basic IT skills test completed. Score: ${result.score}/${result.maxScore} (${result.percentage}%); pass mark ${BASIC_SKILLS_TEST_PASS_MARK}/${result.maxScore}.`,
         },
       });
     }

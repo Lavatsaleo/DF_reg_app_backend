@@ -10,7 +10,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "seed:basic-skills": "node src/scripts/seedBasicSkillsQuestionBank.js"
+    "seed:basic-skills": "node src/scripts/seedBasicSkillsQuestionBank.js",
+    "dhis2:metadata": "node src/scripts/generateDhis2TrackerMetadata.js"
   },
   "keywords": [
     "sightsavers",
