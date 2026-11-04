@@ -112,7 +112,15 @@ function summarizeApplications(rows, filters) {
     tally(pathways, row.pathway || 'UNKNOWN', sex);
     tally(monthly, monthKey(row.createdAt), sex);
     const region = regionName(row);
-    tally(regions, `${country}|${region}`, sex, { country, region });
+    tally(regions, `${country}|${region}`, sex, { country, region, withDisability: 0, eligible: 0, shortlisted: 0, byPathway: Object.fromEntries(PATHWAYS.map(name => [name, 0])), byMonth: {} });
+    // Per-region detail for the map's region profile and month-by-month view.
+    const place = regions.get(`${country}|${region}`);
+    const month = monthKey(row.createdAt);
+    place.byMonth[month] = (place.byMonth[month] || 0) + 1;
+    if (row.pathway in place.byPathway) place.byPathway[row.pathway]++;
+    if (row.hasDisability) place.withDisability++;
+    if (row.isEligible) place.eligible++;
+    if (SHORTLISTED_STATUSES.includes(row.status)) place.shortlisted++;
     tally(funnel, 'Applied', sex);
     tally(sources, sourceName(row.heardAboutProject), sex);
     // One applicant can report several disability types, so type counts can add up to more than the disability total.

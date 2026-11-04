@@ -102,3 +102,17 @@ test('controller limits live query to scope, selects no identities and skips DB 
   await getApplicationDashboard({ user, query:{mode:'demo'} }, response());
   assert.equal(queries.length,1);
 });
+test('each region carries its own month, pathway, disability and outcome counts for the map profile', () => {
+  const rows = [
+    { country: 'Kenya', county: 'Nairobi', sex: 'Female', pathway: 'PHYSICAL_ACADEMY', hasDisability: true, isEligible: true, status: 'ENROLLED_IN_DHIS2_PROGRAM', createdAt: '2026-09-03T00:00:00Z' },
+    { country: 'Kenya', county: 'Nairobi', sex: 'Male', pathway: 'VIRTUAL_ACADEMY', isEligible: false, createdAt: '2026-10-03T00:00:00Z' },
+    { country: 'Kenya', county: 'Mombasa', sex: 'Male', pathway: 'VIRTUAL_ACADEMY', createdAt: '2026-10-04T00:00:00Z' },
+  ];
+  const nairobi = summarizeApplications(rows, getDashboardFilters(admin)).regions.find(r => r.name === 'Nairobi');
+  assert.equal(nairobi.count, 2);
+  assert.deepEqual(nairobi.byMonth, { '2026-09': 1, '2026-10': 1 });
+  assert.deepEqual(nairobi.byPathway, { PHYSICAL_ACADEMY: 1, VIRTUAL_ACADEMY: 1, DIGITAL_ENTREPRENEURSHIP: 0 });
+  assert.equal(nairobi.withDisability, 1);
+  assert.equal(nairobi.eligible, 1);
+  assert.equal(nairobi.shortlisted, 1);
+});
