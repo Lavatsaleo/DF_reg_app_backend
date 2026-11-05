@@ -14,6 +14,16 @@ function buildFrontendTestUrl(rawToken) {
   return `${baseUrl}/basic-skills-test/${encodeURIComponent(rawToken)}`;
 }
 
+// Names are typed by applicants, so they must not be able to inject markup or links into the email.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function buildInviteEmail({ applicant, invitationUrl, expiresAt }) {
   const fullName = `${applicant.firstName || ""} ${applicant.lastName || ""}`.trim() || "Applicant";
   const expiryText = expiresAt.toLocaleDateString("en-GB", {
@@ -42,12 +52,12 @@ function buildInviteEmail({ applicant, invitationUrl, expiresAt }) {
   ].join("\n");
 
   const html = `
-    <p>Dear ${fullName},</p>
+    <p>Dear ${escapeHtml(fullName)},</p>
     <p>Thank you for applying to the Digital Futures registration portal.</p>
     <p>You have passed the initial eligibility screening and are invited to complete the <strong>Basic IT Skills Test</strong>.</p>
-    <p><strong>Application reference:</strong> ${applicant.applicationReference}<br />
-    <strong>Participant code:</strong> ${applicant.participantCode || "Pending"}</p>
-    <p><a href="${invitationUrl}">Open your Basic IT Skills Test</a></p>
+    <p><strong>Application reference:</strong> ${escapeHtml(applicant.applicationReference)}<br />
+    <strong>Participant code:</strong> ${escapeHtml(applicant.participantCode || "Pending")}</p>
+    <p><a href="${escapeHtml(invitationUrl)}">Open your Basic IT Skills Test</a></p>
     <p>This link expires on <strong>${expiryText}</strong>. It can only be used for this application and the test can only be submitted once.</p>
     <p>After you submit the test, the review committee will review your registration details, uploaded documents, and test result together.</p>
     <p>Regards,<br />Digital Futures Registration Team</p>
@@ -61,6 +71,15 @@ async function createBasicSkillsTestInvitation(tx, applicant) {
   const tokenHash = hashToken(rawToken);
   const expiresAt = getInviteExpiryDate();
   const invitationUrl = buildFrontendTestUrl(rawToken);
+
+  // Only the newest link should work, e.g. after staff correct a mistyped email address.
+  await tx.basicSkillsTestInvitation.updateMany({
+    where: {
+      applicantId: applicant.id,
+      status: { in: ["PENDING", "SENT", "EMAIL_FAILED", "OPENED"] },
+    },
+    data: { status: "CANCELLED" },
+  });
 
   const invitation = await tx.basicSkillsTestInvitation.create({
     data: {
@@ -146,6 +165,7 @@ async function createAndSendBasicSkillsTestInvitation(applicant) {
 
 module.exports = {
   buildFrontendTestUrl,
+  buildInviteEmail,
   createBasicSkillsTestInvitation,
   createAndSendBasicSkillsTestInvitation,
   sendBasicSkillsTestInvitation,

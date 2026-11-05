@@ -18,7 +18,7 @@ const {
 const {
   assignApplicantToLeastLoadedMember,
 } = require("../services/committeeAssignment.service");
-const { getApplicantCountryFilter } = require("../utils/countryAccess");
+const { canAccessCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
 
 const REVIEW_TERMINAL_STATUSES = [
   "APPROVED_FOR_ENROLLMENT",
@@ -701,7 +701,16 @@ async function listBasicSkillsTestInvitationDelivery(req, res) {
     const records = applicants.map((applicant) => {
       const invitation = applicant.skillsTestInvitations[0] || null;
       const completed = applicant.skillsTestAttempts.length > 0;
-      const status = completed ? "TEST_COMPLETED" : invitation?.status || "NOT_CREATED";
+      // Status only becomes EXPIRED when someone opens the link, so derive it from the date here.
+      const expired =
+        invitation &&
+        !["USED", "CANCELLED"].includes(invitation.status) &&
+        new Date(invitation.expiresAt).getTime() < Date.now();
+      const status = completed
+        ? "TEST_COMPLETED"
+        : expired
+          ? "EXPIRED"
+          : invitation?.status || "NOT_CREATED";
       return {
         applicantId: applicant.id,
         applicationReference: applicant.applicationReference,
@@ -748,6 +757,14 @@ async function sendBasicSkillsTestInvitationForApplicant(req, res) {
     }
 
     const applicant = await findApplicantForSkillsTest(reference);
+
+    if (applicant && !canAccessCountry(req.user, applicant.country)) {
+      return res.status(404).json({
+        success: false,
+        message: "No application was found with that reference number.",
+      });
+    }
+
     const accessCheck = validateApplicantCanTakeTest(applicant);
 
     if (!accessCheck.allowed) {
