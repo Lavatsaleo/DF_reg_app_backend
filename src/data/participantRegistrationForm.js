@@ -21,6 +21,15 @@ const CONSENT = {
     "We value your privacy and are committed to protecting your personal data.",
     "This form explains how your information will be used and shared. Please read it carefully before you begin — you will also receive a copy to keep.",
   ],
+  // Short summary shown above the full notice; each line restates the registration wording below.
+  atAGlance: [
+    { icon: "bi-clock", text: "This form takes about 2 minutes to complete." },
+    { icon: "bi-cash-coin", text: "There is no payment, registration fee or gift for taking part." },
+    { icon: "bi-shield-lock", text: "Your information is kept private and secure, and shared only with approved Digital Futures partners." },
+    { icon: "bi-person-badge", text: "Reports use a unique code, not your real name." },
+    { icon: "bi-hand-index", text: "Taking part is your choice. You can stop at any time before you submit." },
+    { icon: "bi-file-earmark-text", text: "You will receive a copy of this form to keep." },
+  ],
   whatThisFormInvolvesTitle: "What this form Involves",
   whatThisFormInvolves: [
     "This form will take about 2 minutes to complete.",

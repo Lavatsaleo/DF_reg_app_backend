@@ -5,5 +5,7 @@ node_modules
 /generated/prisma
 
 Accounts.txt
+# Local testing helpers (e.g. creating a test registration link); never deployed
+/local/
 # Reference documents shared by the programme team (not part of the app)
 Working files/
