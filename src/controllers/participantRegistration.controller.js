@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const { hashToken } = require("../utils/tokenUtils");
 const { uploadFileToS3 } = require("../services/fileUpload.service");
@@ -12,8 +13,31 @@ const {
   MODULES,
   QUESTIONS,
   CONSENT_RESPONSE_DEFINITIONS,
+  getQuestionsForCountry,
 } = require("../data/participantRegistrationForm");
 const { canAccessCountry } = require("../utils/countryAccess");
+
+const DRAFT_STAGES = ["consent", "form", "review"];
+const CONSENT_DRAFT_FIELDS = [
+  "decision",
+  "fullName",
+  "signedDate",
+  "signatureMethod",
+  "signatureData",
+  "completedSelf",
+  "assistantName",
+  "assistantRelationship",
+  "assistantRelationshipOther",
+  "assistanceTypes",
+  "assistanceTypeOther",
+  "assistanceLanguage",
+  "assistantSignatureMethod",
+  "assistantSignatureData",
+  "assistanceDate",
+];
+const SIGNATURE_DRAFT_FIELDS = ["signatureData", "assistantSignatureData"];
+const DOCUMENT_QUESTIONS = QUESTIONS.filter((question) => question.responseType === "FILE");
+const ALLOWED_DOCUMENT_TYPES = ["application/pdf", "image/jpeg", "image/png"];
 
 function parseJson(value, fallback) {
   if (value === undefined || value === null || value === "") return fallback;
@@ -55,11 +79,11 @@ function isQuestionVisible(question, answers) {
   return true;
 }
 
-function validateResponses(answers) {
+function validateResponses(answers, questions = QUESTIONS) {
   const missing = [];
   const invalid = [];
 
-  for (const question of QUESTIONS) {
+  for (const question of questions) {
     if (question.responseType === "FILE") continue;
     if (!isQuestionVisible(question, answers)) continue;
 
@@ -305,6 +329,104 @@ function getFile(req, fieldName) {
   return req.files?.[fieldName]?.[0] || null;
 }
 
+function cleanDraftValue(value) {
+  if (Array.isArray(value)) {
+    return value.slice(0, 50).map((item) => String(item ?? "").slice(0, 500));
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") return value.slice(0, 5000);
+  return undefined;
+}
+
+// Keeps only known question codes and consent fields, with size limits, so a draft can't store arbitrary data.
+function sanitizeDraft(body) {
+  const answerCodes = new Set(
+    QUESTIONS.filter((question) => question.responseType !== "FILE").map((question) => question.questionCode)
+  );
+  const answers = {};
+  for (const [code, value] of Object.entries(body?.answers || {})) {
+    if (!answerCodes.has(code)) continue;
+    const clean = cleanDraftValue(value);
+    if (clean !== undefined) answers[code] = clean;
+  }
+
+  const consent = {};
+  for (const field of CONSENT_DRAFT_FIELDS) {
+    const value = body?.consent?.[field];
+    if (SIGNATURE_DRAFT_FIELDS.includes(field)) {
+      if (typeof value === "string" && value.length <= 60000) consent[field] = value;
+      continue;
+    }
+    const clean = cleanDraftValue(value);
+    if (clean !== undefined) consent[field] = clean;
+  }
+
+  const clamp = (value, max) => Math.max(0, Math.min(max, Math.trunc(Number(value)) || 0));
+
+  return {
+    stage: DRAFT_STAGES.includes(body?.stage) ? body.stage : "consent",
+    // step is the module index; furthestStep counts every page (consent, each module, review).
+    step: clamp(body?.step, MODULES.length - 1),
+    furthestStep: clamp(body?.furthestStep, MODULES.length + 1),
+    answers,
+    consent,
+  };
+}
+
+// What the participant needs to see of their saved progress; storage keys stay on the server.
+function summarizeDraft(invitation) {
+  if (!invitation.draftSavedAt) return null;
+
+  const documents = Object.fromEntries(
+    Object.entries(invitation.draftDocuments || {}).map(([field, document]) => [
+      field,
+      { name: document.originalName, sizeBytes: document.sizeBytes, uploadedAt: document.uploadedAt },
+    ])
+  );
+
+  return {
+    ...(invitation.draftData || {}),
+    documents,
+    savedAt: invitation.draftSavedAt,
+  };
+}
+
+// Loads the invitation for a public draft or upload request, or sends the reason it can't be used.
+async function loadEditableInvitation(req, res) {
+  const rawToken = String(req.params.token || "").trim();
+  const invitation = rawToken ? await loadInvitation(rawToken) : null;
+
+  if (!invitation) {
+    res.status(404).json({
+      success: false,
+      message: "This participant registration invitation could not be found.",
+    });
+    return null;
+  }
+
+  const effectiveStatus = getInvitationStatus(invitation);
+  if (["EXPIRED", "CANCELLED", "SUBMITTED"].includes(effectiveStatus)) {
+    res.status(410).json({
+      success: false,
+      message:
+        effectiveStatus === "SUBMITTED"
+          ? "This participant registration form has already been submitted."
+          : "This participant registration invitation is no longer active. Please use the most recent email invitation.",
+    });
+    return null;
+  }
+
+  if (!pathwaySupportsParticipantRegistration(invitation.applicant.pathway)) {
+    res.status(403).json({
+      success: false,
+      message: "Participant registration is currently available only for Physical Academy and Virtual Academy.",
+    });
+    return null;
+  }
+
+  return invitation;
+}
+
 async function getParticipantRegistrationForm(req, res) {
   try {
     const rawToken = String(req.params.token || "").trim();
@@ -365,11 +487,12 @@ async function getParticipantRegistrationForm(req, res) {
       alreadySubmitted: effectiveStatus === "SUBMITTED",
       applicant: summarizeApplicant(invitation.applicant),
       invitation: summarizeInvitation(invitation, effectiveStatus),
+      draft: effectiveStatus === "SUBMITTED" ? null : summarizeDraft(invitation),
       form: {
         formVersion: PARTICIPANT_REGISTRATION_FORM_VERSION,
         consent: CONSENT,
         modules: MODULES,
-        questions: QUESTIONS,
+        questions: getQuestionsForCountry(invitation.applicant.country),
       },
     });
   } catch (error) {
@@ -377,6 +500,89 @@ async function getParticipantRegistrationForm(req, res) {
     return res.status(500).json({
       success: false,
       message: "Unable to load the participant registration form.",
+    });
+  }
+}
+
+async function saveParticipantRegistrationDraft(req, res) {
+  try {
+    const invitation = await loadEditableInvitation(req, res);
+    if (!invitation) return undefined;
+
+    const draftSavedAt = new Date();
+    await prisma.participantRegistrationInvitation.update({
+      where: { id: invitation.id },
+      data: { draftData: sanitizeDraft(req.body), draftSavedAt },
+    });
+
+    return res.json({ success: true, savedAt: draftSavedAt });
+  } catch (error) {
+    console.error("Save participant registration draft error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to save your progress. Please check your connection and try again.",
+    });
+  }
+}
+
+async function uploadParticipantRegistrationDocument(req, res) {
+  try {
+    const question = DOCUMENT_QUESTIONS.find((item) => item.documentField === req.params.field);
+    if (!question) {
+      return res.status(400).json({ success: false, message: "Unknown document field." });
+    }
+
+    const invitation = await loadEditableInvitation(req, res);
+    if (!invitation) return undefined;
+
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: "Please choose a file to upload." });
+    }
+
+    if (!ALLOWED_DOCUMENT_TYPES.includes(file.mimetype)) {
+      return res.status(400).json({ success: false, message: "Please upload a PDF, JPG or PNG file." });
+    }
+
+    const uploaded = await uploadFileToS3(file, invitation.applicant.id, question.documentType);
+    const document = {
+      documentType: question.documentType,
+      originalName: file.originalname,
+      fileName: uploaded.fileName,
+      mimeType: file.mimetype,
+      sizeBytes: file.size,
+      storageBucket: uploaded.storageBucket,
+      storageKey: uploaded.storageKey,
+      storageUrl: uploaded.storageUrl,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    // Re-read inside the transaction so two uploads close together don't overwrite each other.
+    const draftSavedAt = new Date();
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.participantRegistrationInvitation.findUnique({
+        where: { id: invitation.id },
+        select: { draftDocuments: true },
+      });
+      await tx.participantRegistrationInvitation.update({
+        where: { id: invitation.id },
+        data: {
+          draftDocuments: { ...(current?.draftDocuments || {}), [question.documentField]: document },
+          draftSavedAt,
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      savedAt: draftSavedAt,
+      document: { name: document.originalName, sizeBytes: document.sizeBytes, uploadedAt: document.uploadedAt },
+    });
+  } catch (error) {
+    console.error("Upload participant registration document error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Unable to upload this document. Please try again.",
     });
   }
 }
@@ -536,7 +742,8 @@ async function submitParticipantRegistration(req, res) {
       return res.status(400).json({ success: false, message: consentError });
     }
 
-    const { missing, invalid } = validateResponses(answers);
+    const questions = getQuestionsForCountry(invitation.applicant.country);
+    const { missing, invalid } = validateResponses(answers, questions);
     if (missing.length || invalid.length) {
       return res.status(400).json({
         success: false,
@@ -546,53 +753,64 @@ async function submitParticipantRegistration(req, res) {
       });
     }
 
-    const idDocument = getFile(req, "idDocument");
-    const educationCertificate = getFile(req, "educationCertificate");
-    const disabilityRegistrationCard = getFile(req, "disabilityRegistrationCard");
-    const hasDisabilityCard = answers.M1_2 === "Yes";
-
-    const missingDocuments = [];
-    if (!idDocument) missingDocuments.push("Upload your ID document");
-    if (!educationCertificate) {
-      missingDocuments.push("Upload your certificate for your highest level of education");
-    }
-    if (hasDisabilityCard && !disabilityRegistrationCard) {
-      missingDocuments.push("Please upload a copy of your disability registration card");
-    }
+    // Documents are normally uploaded as the participant goes; a file sent with the submission replaces the saved one.
+    const savedDocuments = invitation.draftDocuments || {};
+    const missingDocuments = DOCUMENT_QUESTIONS
+      .filter((question) => question.required && isQuestionVisible(question, answers))
+      .filter((question) => !getFile(req, question.documentField) && !savedDocuments[question.documentField])
+      .map((question) => question.questionText);
 
     if (missingDocuments.length > 0) {
       return res.status(400).json({
         success: false,
         message: "Please upload the required registration documents.",
         missingDocuments,
+        missingQuestions: DOCUMENT_QUESTIONS
+          .filter((question) => missingDocuments.includes(question.questionText))
+          .map((question) => ({ questionCode: question.questionCode })),
       });
     }
 
     const applicantId = invitation.applicant.id;
     const uploadedDocuments = [];
 
-    for (const [file, documentType] of [
-      [idDocument, "NATIONAL_ID"],
-      [educationCertificate, "EDUCATION_CERTIFICATE"],
-      [disabilityRegistrationCard, "DISABILITY_DOCUMENT"],
-    ]) {
-      if (!file) continue;
+    for (const question of DOCUMENT_QUESTIONS) {
+      if (!isQuestionVisible(question, answers)) continue;
 
-      const uploaded = await uploadFileToS3(file, applicantId, documentType);
-      uploadedDocuments.push({
-        applicantId,
-        documentType,
-        originalName: file.originalname,
-        fileName: uploaded.fileName,
-        mimeType: file.mimetype,
-        sizeBytes: file.size,
-        storageBucket: uploaded.storageBucket,
-        storageKey: uploaded.storageKey,
-        storageUrl: uploaded.storageUrl,
-      });
+      const file = getFile(req, question.documentField);
+      if (file) {
+        const uploaded = await uploadFileToS3(file, applicantId, question.documentType);
+        uploadedDocuments.push({
+          applicantId,
+          documentType: question.documentType,
+          originalName: file.originalname,
+          fileName: uploaded.fileName,
+          mimeType: file.mimetype,
+          sizeBytes: file.size,
+          storageBucket: uploaded.storageBucket,
+          storageKey: uploaded.storageKey,
+          storageUrl: uploaded.storageUrl,
+        });
+        continue;
+      }
+
+      const saved = savedDocuments[question.documentField];
+      if (saved) {
+        uploadedDocuments.push({
+          applicantId,
+          documentType: saved.documentType,
+          originalName: saved.originalName,
+          fileName: saved.fileName,
+          mimeType: saved.mimeType,
+          sizeBytes: saved.sizeBytes,
+          storageBucket: saved.storageBucket,
+          storageKey: saved.storageKey,
+          storageUrl: saved.storageUrl,
+        });
+      }
     }
 
-    const visibleQuestionResponses = QUESTIONS
+    const visibleQuestionResponses = questions
       .filter(
         (question) =>
           question.responseType !== "FILE" &&
@@ -668,6 +886,8 @@ async function submitParticipantRegistration(req, res) {
         data: {
           status: "SUBMITTED",
           submittedAt: new Date(),
+          draftData: Prisma.DbNull,
+          draftDocuments: Prisma.DbNull,
         },
       });
 
@@ -789,6 +1009,9 @@ async function resendParticipantRegistrationInvitation(req, res) {
 
 module.exports = {
   getParticipantRegistrationForm,
+  saveParticipantRegistrationDraft,
+  uploadParticipantRegistrationDocument,
+  sanitizeDraft,
   saveParticipantRegistrationSupportRequest,
   submitParticipantRegistration,
   resendParticipantRegistrationInvitation,

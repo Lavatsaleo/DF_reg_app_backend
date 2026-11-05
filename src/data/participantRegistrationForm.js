@@ -135,6 +135,13 @@ const QUESTIONS = [
     section: "Module 1: Document & disability registration verification",
     responseType: "SINGLE_SELECT", required: true,
     options: ["Yes", "No", "Not Applicable"],
+    // Participants only see the disability body for their own country.
+    textByCountry: {
+      Zambia: "Are you a registered member of the Zambia Agency for Persons with Disabilities (ZAPD)?",
+      Kenya: "Are you a registered member of the National Council for Persons with Disabilities (NCPWD)?",
+      Nigeria: "Are you a registered member of the National Commission for Persons with Disabilities (NCPWD)?",
+      Ghana: "Are you a registered member of the National Council on Persons with Disability (NCPD)?",
+    },
   },
   {
     questionCode: "M1_2", displayNumber: "M1.2",
@@ -524,7 +531,7 @@ const MODULES = [
   {
     title: "Module 5: Stigma and Discrimination",
     intro: "This section asks about your experiences and feelings related to disability over the past three months. Some questions may be sensitive there are no right or wrong answers. Please answer honestly based on your own experiences.",
-    note: "Items M5.1–M5.3 use a 5-point agreement scale (1 = Strongly Disagree to 5 = Strongly Agree). Items M5.4–M5.7 ask how often each experience occurred in the past 3 months.",
+    note: "These questions use a 5-point agreement scale (1 = Strongly Disagree to 5 = Strongly Agree).",
   },
 ];
 
@@ -547,8 +554,16 @@ const CONSENT_RESPONSE_DEFINITIONS = [
   ["PR_CONSENT_ASSISTANCE_DATE", "Assistance date", "DATE"],
 ];
 
+// Questions as a participant from the given country should see them.
+function getQuestionsForCountry(country) {
+  return QUESTIONS.map(({ textByCountry, ...question }) =>
+    textByCountry?.[country] ? { ...question, questionText: textByCountry[country] } : question
+  );
+}
+
 module.exports = {
   CONSENT_RESPONSE_DEFINITIONS,
+  getQuestionsForCountry,
   PARTICIPANT_REGISTRATION_FORM_VERSION,
   PARTICIPANT_REGISTRATION_PATHWAYS,
   CONSENT,

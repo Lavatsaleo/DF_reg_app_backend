@@ -455,6 +455,15 @@ model ParticipantRegistrationInvitation {
   expiresAt   DateTime
   emailError  String? @db.Text
 
+  /*
+    Saved progress so a participant can stop and come back with the same link.
+    draftData: { stage, step, furthestStep, answers, consent }
+    draftDocuments: uploaded files by form field, moved to ApplicantDocument on submit.
+  */
+  draftData      Json?
+  draftDocuments Json?
+  draftSavedAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -47,6 +47,7 @@ function buildInvitationEmail({ applicant, invitationUrl, expiresAt }) {
     `This secure link expires on ${expiryText}. It is linked to your application and should not be shared with anyone else.`,
     "",
     "You will be asked to confirm your consent, answer the registration and baseline questions, and upload the required ID and education documents.",
+    "Your answers are saved as you go, so you can stop and come back later using this same link.",
     "",
     "Regards,",
     "Digital Futures Registration Team",
@@ -64,6 +65,7 @@ function buildInvitationEmail({ applicant, invitationUrl, expiresAt }) {
     <p><a href="${invitationUrl}">Open participant registration form</a></p>
     <p>This secure link expires on <strong>${expiryText}</strong>. It is linked to your application and should not be shared with anyone else.</p>
     <p>You will be asked to confirm your consent, answer the registration and baseline questions, and upload the required ID and education documents.</p>
+    <p>Your answers are saved as you go, so you can stop and come back later using this same link.</p>
     <p>Regards,<br />Digital Futures Registration Team</p>
   `;
 
@@ -80,6 +82,17 @@ async function createParticipantRegistrationInvitation(tx, applicant) {
     error.code = "PARTICIPANT_EMAIL_REQUIRED";
     throw error;
   }
+
+  // A new link replaces the old one, so carry over any progress the participant already saved.
+  const previousDraft = await tx.participantRegistrationInvitation.findFirst({
+    where: {
+      applicantId: applicant.id,
+      status: { not: "SUBMITTED" },
+      draftSavedAt: { not: null },
+    },
+    orderBy: { draftSavedAt: "desc" },
+    select: { draftData: true, draftDocuments: true, draftSavedAt: true },
+  });
 
   await tx.participantRegistrationInvitation.updateMany({
     where: {
@@ -104,6 +117,7 @@ async function createParticipantRegistrationInvitation(tx, applicant) {
       formVersion: PARTICIPANT_REGISTRATION_FORM_VERSION,
       expiresAt,
       status: "PENDING",
+      ...(previousDraft || {}),
     },
   });
 
