@@ -85,3 +85,18 @@ test('cross-origin access is granted only to configured frontend origins', async
     assert.equal(blocked.headers.get('access-control-allow-origin'), null);
   });
 });
+
+test('only super admins can narrow committee lists to a chosen country', () => {
+  const { getRequestedApplicantCountryFilter, getRequestedCommitteeMemberCountryFilter } = require('../src/utils/countryAccess');
+  const admin = { role: 'ADMIN' };
+  const kenyaAdmin = { role: 'COUNTRY_ADMIN', country: 'Kenya' };
+
+  assert.deepEqual(getRequestedApplicantCountryFilter(admin, 'ghana'), { country: 'Ghana' });
+  assert.deepEqual(getRequestedApplicantCountryFilter(admin, ''), {});
+  assert.deepEqual(getRequestedApplicantCountryFilter(admin, 'Atlantis'), {});
+  assert.deepEqual(getRequestedCommitteeMemberCountryFilter(admin, 'Zambia'), { country: 'Zambia' });
+  // A country-scoped account cannot use the filter to see another country.
+  assert.deepEqual(getRequestedApplicantCountryFilter(kenyaAdmin, 'Nigeria'), { country: 'Kenya' });
+  assert.deepEqual(getRequestedCommitteeMemberCountryFilter(kenyaAdmin, 'Nigeria'), { country: 'Kenya' });
+  assert.deepEqual(getRequestedApplicantCountryFilter({ role: 'COMMITTEE_MEMBER' }, 'Kenya'), NO_SCOPE);
+});

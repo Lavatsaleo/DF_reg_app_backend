@@ -20,8 +20,9 @@ const {
   normalizeCountry,
   isSuperAdmin,
   getUserCountry,
-  getApplicantCountryFilter,
-  getCommitteeMemberCountryFilter,
+  getRequestedCountry,
+  getRequestedApplicantCountryFilter,
+  getRequestedCommitteeMemberCountryFilter,
   canAccessCountry,
   resolveCountryForManagedRecord,
 } = require("../utils/countryAccess");
@@ -386,8 +387,8 @@ function summarizeSelectedParticipantReportRow(applicant, user) {
   };
 }
 
-async function getWorkloadByMemberId(user) {
-  const country = isSuperAdmin(user) ? null : getUserCountry(user);
+async function getWorkloadByMemberId(user, requestedCountry) {
+  const country = getRequestedCountry(user, requestedCountry);
   const where = country ? { applicant: { country } } : {};
 
   const grouped = await prisma.committeeAssignment.groupBy({
@@ -451,12 +452,12 @@ function getAssignmentInclude() {
 async function listCommitteeMembers(req, res) {
   try {
     const includeInactive = String(req.query.includeInactive || "false") === "true";
-    const memberCountryFilter = getCommitteeMemberCountryFilter(req.user);
+    const memberCountryFilter = getRequestedCommitteeMemberCountryFilter(req.user, req.query.country);
     const where = {
       ...memberCountryFilter,
       ...(includeInactive ? {} : { isActive: true }),
     };
-    const workloadMap = await getWorkloadByMemberId(req.user);
+    const workloadMap = await getWorkloadByMemberId(req.user, req.query.country);
     const members = await prisma.committeeMember.findMany({
       where,
       orderBy: [{ country: "asc" }, { role: "asc" }, { fullName: "asc" }],
@@ -804,8 +805,8 @@ async function updateCommitteeMember(req, res) {
 
 async function getCommitteeOverview(req, res) {
   try {
-    const applicantCountryFilter = getApplicantCountryFilter(req.user);
-    const memberCountryFilter = getCommitteeMemberCountryFilter(req.user);
+    const applicantCountryFilter = getRequestedApplicantCountryFilter(req.user, req.query.country);
+    const memberCountryFilter = getRequestedCommitteeMemberCountryFilter(req.user, req.query.country);
     const assignmentWhere = Object.keys(applicantCountryFilter).length
       ? { applicant: applicantCountryFilter }
       : {};
@@ -841,12 +842,13 @@ async function getCommitteeOverview(req, res) {
       return acc;
     }, {});
 
-    const workloadMap = await getWorkloadByMemberId(req.user);
+    const workloadMap = await getWorkloadByMemberId(req.user, req.query.country);
 
     return res.json({
       success: true,
       countries: COUNTRIES,
       currentUserCountry: getUserCountry(req.user),
+      canFilterByCountry: isSuperAdmin(req.user),
       overview: {
         activeMembers: members.filter((member) => member.isActive).length,
         allMembers: members.length,
@@ -899,7 +901,7 @@ function redactReviewNarrative(value, applicant) {
   ].filter((value) => String(value || "").trim().length >= 3);
 
   for (const identifier of identifiers) {
-    const escaped = String(identifier).replace(/[|\\{}()[\]^$+*?.]/g, "\\async function listCommitteeAssignments(req, res) {");
+    const escaped = String(identifier).replace(/[|\\{}()[\]^$+*?.]/g, "\\$&");
     text = text.replace(new RegExp(escaped, "gi"), "[redacted]");
   }
 
@@ -1001,7 +1003,7 @@ async function listCommitteeAssignments(req, res) {
     const status = req.query.status ? normalizeAssignmentStatus(req.query.status) : null;
     const memberId = toSafeString(req.query.memberId);
     const search = toSafeString(req.query.search).toLowerCase();
-    const applicantCountryFilter = getApplicantCountryFilter(req.user);
+    const applicantCountryFilter = getRequestedApplicantCountryFilter(req.user, req.query.country);
 
     const where = {};
     if (status) where.status = status;
@@ -1052,7 +1054,7 @@ async function listCommitteeAssignments(req, res) {
 
 async function listUnassignedReadyApplicants(req, res) {
   try {
-    const applicantCountryFilter = getApplicantCountryFilter(req.user);
+    const applicantCountryFilter = getRequestedApplicantCountryFilter(req.user, req.query.country);
     const applicants = await prisma.applicant.findMany({
       where: {
         ...applicantCountryFilter,
@@ -1085,7 +1087,7 @@ async function listUnassignedReadyApplicants(req, res) {
 
 async function autoAssignReadyApplicants(req, res) {
   try {
-    const country = isSuperAdmin(req.user) ? null : getUserCountry(req.user);
+    const country = getRequestedCountry(req.user, req.body?.country || req.query.country);
 
     if (!isSuperAdmin(req.user) && !country) {
       return res.status(403).json({

@@ -18,7 +18,7 @@ const {
 const {
   assignApplicantToLeastLoadedMember,
 } = require("../services/committeeAssignment.service");
-const { canAccessCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
+const { canAccessCountry, getRequestedApplicantCountryFilter } = require("../utils/countryAccess");
 
 const REVIEW_TERMINAL_STATUSES = [
   "APPROVED_FOR_ENROLLMENT",
@@ -658,7 +658,7 @@ async function submitInvitationBasicSkillsTest(req, res) {
 // Show failed and unopened test invitations so admins can safely resend.
 async function listBasicSkillsTestInvitationDelivery(req, res) {
   try {
-    const countryFilter = getApplicantCountryFilter(req.user);
+    const countryFilter = getRequestedApplicantCountryFilter(req.user, req.query.country);
 
     const applicants = await prisma.applicant.findMany({
       where: {

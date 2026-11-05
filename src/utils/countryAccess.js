@@ -57,6 +57,23 @@ function getCommitteeMemberCountryFilter(user) {
   return NO_COUNTRY_SCOPE;
 }
 
+// Super admins may narrow any list to one country; everyone else stays locked to their own.
+function getRequestedCountry(user, requestedCountry) {
+  if (!isSuperAdmin(user)) return getUserCountry(user);
+  const country = normalizeCountry(requestedCountry);
+  return COUNTRIES.includes(country) ? country : null;
+}
+
+function getRequestedApplicantCountryFilter(user, requestedCountry) {
+  const country = isSuperAdmin(user) ? getRequestedCountry(user, requestedCountry) : null;
+  return country ? { country } : getApplicantCountryFilter(user);
+}
+
+function getRequestedCommitteeMemberCountryFilter(user, requestedCountry) {
+  const country = isSuperAdmin(user) ? getRequestedCountry(user, requestedCountry) : null;
+  return country ? { country } : getCommitteeMemberCountryFilter(user);
+}
+
 function canAccessCountry(user, country) {
   if (isSuperAdmin(user)) return true;
 
@@ -85,6 +102,9 @@ module.exports = {
   getUserCountry,
   getApplicantCountryFilter,
   getCommitteeMemberCountryFilter,
+  getRequestedCountry,
+  getRequestedApplicantCountryFilter,
+  getRequestedCommitteeMemberCountryFilter,
   canAccessCountry,
   resolveCountryForManagedRecord,
 };
