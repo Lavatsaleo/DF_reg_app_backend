@@ -1897,6 +1897,13 @@ async function getApplicantById(req, res) {
   }
 }
 
+// The status lookup is public, so show only enough of the address for applicants to spot a typo.
+function maskEmail(email) {
+  const [name, domain] = String(email || "").split("@");
+  if (!name || !domain) return null;
+  const visible = name.length <= 2 ? name.slice(0, 1) : name.slice(0, 2);
+  return `${visible}${"*".repeat(Math.max(3, name.length - visible.length))}@${domain}`;
+}
 
 function getNextStepMessage(status, pathway, screeningStatus) {
   if (
@@ -2062,9 +2069,12 @@ async function getRegistrationStatus(req, res) {
         testInvitation: applicant.skillsTestInvitations?.[0]
           ? {
               status: applicant.skillsTestInvitations[0].status,
-              emailTo: applicant.skillsTestInvitations[0].emailTo,
+              emailTo: maskEmail(applicant.skillsTestInvitations[0].emailTo),
               sentAt: applicant.skillsTestInvitations[0].sentAt,
               expiresAt: applicant.skillsTestInvitations[0].expiresAt,
+              expired:
+                !["USED", "CANCELLED"].includes(applicant.skillsTestInvitations[0].status) &&
+                new Date(applicant.skillsTestInvitations[0].expiresAt).getTime() < Date.now(),
               openedAt: applicant.skillsTestInvitations[0].openedAt,
               usedAt: applicant.skillsTestInvitations[0].usedAt,
             }
@@ -2073,7 +2083,7 @@ async function getRegistrationStatus(req, res) {
           applicant.participantRegistrationInvitations?.[0]
             ? {
                 status: applicant.participantRegistrationInvitations[0].status,
-                emailTo: applicant.participantRegistrationInvitations[0].emailTo,
+                emailTo: maskEmail(applicant.participantRegistrationInvitations[0].emailTo),
                 sentAt: applicant.participantRegistrationInvitations[0].sentAt,
                 expiresAt: applicant.participantRegistrationInvitations[0].expiresAt,
                 openedAt: applicant.participantRegistrationInvitations[0].openedAt,
