@@ -100,3 +100,29 @@ test('only super admins can narrow committee lists to a chosen country', () => {
   assert.deepEqual(getRequestedCommitteeMemberCountryFilter(kenyaAdmin, 'Nigeria'), { country: 'Kenya' });
   assert.deepEqual(getRequestedApplicantCountryFilter({ role: 'COMMITTEE_MEMBER' }, 'Kenya'), NO_SCOPE);
 });
+
+test('consent filters accept only known values and whole-day date ranges', () => {
+  const { readConsentFilters, summarizeConsentRecord } = require('../src/controllers/consent.controller');
+  const filters = readConsentFilters({
+    country: 'kenya', pathway: 'virtual_academy', search: '  APP-DF  ',
+    from: '2026-11-01', to: '2026-11-04', assisted: 'YES', requestStatus: 'pending',
+  });
+  assert.equal(filters.country, 'Kenya');
+  assert.equal(filters.pathway, 'VIRTUAL_ACADEMY');
+  assert.equal(filters.search, 'APP-DF');
+  assert.equal(filters.from.toISOString(), '2026-11-01T00:00:00.000Z');
+  // "to" includes the whole of that day.
+  assert.equal(filters.to.toISOString(), '2026-11-05T00:00:00.000Z');
+  assert.equal(filters.assisted, 'yes');
+  assert.equal(filters.requestStatus, 'PENDING');
+
+  const junk = readConsentFilters({ country: 'Atlantis', pathway: 'x', from: '1/11/2026', assisted: 'maybe', requestStatus: 'done' });
+  assert.deepEqual([junk.country, junk.pathway, junk.from, junk.assisted, junk.requestStatus], [null, null, null, null, null]);
+
+  // The list view leaves out consent wording and signatures.
+  const summary = summarizeConsentRecord({
+    applicantId: 'a1', signatureData: 'M0 0', consentSnapshot: { title: 'x' }, assistance: { assistantName: 'Helper' },
+  });
+  assert.equal(summary.assisted, true);
+  assert.ok(!('signatureData' in summary) && !('consentSnapshot' in summary));
+});

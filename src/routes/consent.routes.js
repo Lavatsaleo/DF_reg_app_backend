@@ -1,6 +1,6 @@
 const express = require("express");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
-const { getCurrentConsent, getConsentRecords } = require("../controllers/consent.controller");
+const { getCurrentConsent, getConsentRecords, getConsentRecord } = require("../controllers/consent.controller");
 
 const { createSupportRequest, markSupportRequestContacted } = require("../controllers/consentSupport.controller");
 const router = express.Router();
@@ -9,6 +9,7 @@ router.patch("/support-requests/:id/contacted", requireAuth, requireRoles("ADMIN
 
 router.get("/current", getCurrentConsent);
 router.get("/", requireAuth, requireRoles("ADMIN"), getConsentRecords);
+router.get("/records/:applicantId", requireAuth, requireRoles("ADMIN"), getConsentRecord);
 
 module.exports = router;
 

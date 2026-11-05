@@ -5,6 +5,7 @@ const {
   getApplicationConsent,
   getConsentByVersion,
 } = require("../data/physicalAcademyConsent");
+const { COUNTRIES, normalizeCountry } = require("../utils/countryAccess");
 
 const CONSENT_CODES = [
   "CONSENT_VERSION",
@@ -14,7 +15,6 @@ const CONSENT_CODES = [
   "CONSENT_SIGNED_DATE",
   "CONSENT_SIGNATURE_METHOD",
   "CONSENT_SIGNATURE_DATA",
-  "CONSENT_DETECTED_COUNTRY",
   "CONSENT_CONTACT_CONTEXT",
   "CONSENT_CONTACTS_AT_SIGNING",
   "CONSENT_SUPPORT_REQUEST_NAME",
@@ -79,7 +79,6 @@ function buildConsentRecord(applicant) {
     applicantName: [applicant.firstName, applicant.lastName].filter(Boolean).join(" "),
     country: applicant.country,
     countryOfResidence: applicant.country,
-    detectedCountryAtConsent: answers.CONSENT_DETECTED_COUNTRY || null,
     contactContextAtSigning: answers.CONSENT_CONTACT_CONTEXT || null,
     contactsDisplayedAtSigning: parseJsonValue(answers.CONSENT_CONTACTS_AT_SIGNING),
     pathway: applicant.pathway,
@@ -132,48 +131,137 @@ async function getCurrentConsent(req, res) {
   });
 }
 
+const PATHWAYS = ["PHYSICAL_ACADEMY", "VIRTUAL_ACADEMY", "DIGITAL_ENTREPRENEURSHIP"];
+const SUPPORT_STATUSES = ["PENDING", "CONTACTED"];
+
+function cleanText(value) {
+  return String(value || "").trim().slice(0, 120);
+}
+
+function parseDay(value, endOfDay = false) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return null;
+  const date = new Date(`${match[0]}T00:00:00.000Z`);
+  if (endOfDay) date.setUTCDate(date.getUTCDate() + 1);
+  return date;
+}
+
+// Filters shared by signed consents and explanation requests.
+function readConsentFilters(query = {}) {
+  const country = normalizeCountry(query.country);
+  const pathway = String(query.pathway || "").toUpperCase();
+  const requestStatus = String(query.requestStatus || "").toUpperCase();
+  const assisted = String(query.assisted || "").toLowerCase();
+
+  return {
+    country: COUNTRIES.includes(country) ? country : null,
+    pathway: PATHWAYS.includes(pathway) ? pathway : null,
+    search: cleanText(query.search),
+    from: parseDay(query.from),
+    to: parseDay(query.to, true),
+    assisted: ["yes", "no"].includes(assisted) ? assisted : null,
+    requestStatus: SUPPORT_STATUSES.includes(requestStatus) ? requestStatus : null,
+  };
+}
+
+function dateRange(filters) {
+  if (!filters.from && !filters.to) return undefined;
+  return {
+    ...(filters.from ? { gte: filters.from } : {}),
+    ...(filters.to ? { lt: filters.to } : {}),
+  };
+}
+
+function buildApplicantWhere(filters) {
+  const where = {
+    responses: { some: { questionCode: "CONSENT_VERSION" } },
+  };
+  if (filters.country) where.country = filters.country;
+  if (filters.pathway) where.pathway = filters.pathway;
+  const createdAt = dateRange(filters);
+  if (createdAt) where.createdAt = createdAt;
+  if (filters.search) {
+    where.OR = [
+      { firstName: { contains: filters.search } },
+      { lastName: { contains: filters.search } },
+      { applicationReference: { contains: filters.search.toUpperCase() } },
+      { participantCode: { contains: filters.search.toUpperCase() } },
+    ];
+  }
+  return where;
+}
+
+function buildSupportRequestWhere(filters) {
+  const where = {};
+  if (filters.country) where.country = filters.country;
+  if (filters.pathway) where.pathway = filters.pathway;
+  if (filters.requestStatus) where.status = filters.requestStatus;
+  const createdAt = dateRange(filters);
+  if (createdAt) where.createdAt = createdAt;
+  if (filters.search) {
+    where.OR = [
+      { fullName: { contains: filters.search } },
+      { contactNumber: { contains: filters.search } },
+    ];
+  }
+  return where;
+}
+
+const CONSENT_APPLICANT_SELECT = {
+  id: true,
+  applicationReference: true,
+  participantCode: true,
+  firstName: true,
+  lastName: true,
+  country: true,
+  pathway: true,
+  createdAt: true,
+  responses: {
+    where: { questionCode: { in: CONSENT_CODES } },
+    select: {
+      questionCode: true,
+      valueText: true,
+      valueNumber: true,
+      valueBoolean: true,
+      valueDate: true,
+      valueJson: true,
+    },
+  },
+};
+
+// The list only needs enough to find a record; wording and signatures load when one is opened.
+function summarizeConsentRecord(record) {
+  return {
+    applicantId: record.applicantId,
+    applicationReference: record.applicationReference,
+    participantCode: record.participantCode,
+    applicantName: record.applicantName,
+    nameOrIdCode: record.nameOrIdCode,
+    countryOfResidence: record.countryOfResidence,
+    pathway: record.pathway,
+    submittedAt: record.submittedAt,
+    signedDate: record.signedDate,
+    consentVersion: record.consentVersion,
+    agreedToParticipate: record.agreedToParticipate,
+    consentDecision: record.consentDecision,
+    assisted: Boolean(record.assistance?.assistantName),
+    signatureMethod: record.signatureMethod,
+  };
+}
+
 async function getConsentRecords(req, res) {
   try {
-    const applicants = await prisma.applicant.findMany({
-      where: {
-        responses: {
-          some: {
-            questionCode: "CONSENT_VERSION",
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        applicationReference: true,
-        participantCode: true,
-        firstName: true,
-        lastName: true,
-        country: true,
-        pathway: true,
-        createdAt: true,
-        responses: {
-          where: {
-            questionCode: { in: CONSENT_CODES },
-          },
-          select: {
-            questionCode: true,
-            valueText: true,
-            valueNumber: true,
-            valueBoolean: true,
-            valueDate: true,
-            valueJson: true,
-          },
-        },
-      },
-    });
+    const filters = readConsentFilters(req.query);
+    const full = String(req.query.view || "").toLowerCase() === "full";
 
-    return res.json({
-      success: true,
-      generatedAt: new Date().toISOString(),
-      count: applicants.length,
-      records: applicants.map(buildConsentRecord),
-      supportRequests: await prisma.consentSupportRequest.findMany({
+    const [applicants, supportRequests] = await Promise.all([
+      prisma.applicant.findMany({
+        where: buildApplicantWhere(filters),
+        orderBy: { createdAt: "desc" },
+        select: CONSENT_APPLICANT_SELECT,
+      }),
+      prisma.consentSupportRequest.findMany({
+        where: buildSupportRequestWhere(filters),
         orderBy: [{ status: "desc" }, { createdAt: "desc" }],
         select: {
           id: true, fullName: true, contactNumber: true, country: true,
@@ -181,6 +269,31 @@ async function getConsentRecords(req, res) {
           notificationStatus: true, createdAt: true, contactedAt: true,
         },
       }),
+    ]);
+
+    let records = applicants.map(buildConsentRecord);
+    if (filters.assisted) {
+      const wantAssisted = filters.assisted === "yes";
+      records = records.filter((record) => Boolean(record.assistance?.assistantName) === wantAssisted);
+    }
+
+    return res.json({
+      success: true,
+      generatedAt: new Date().toISOString(),
+      countries: COUNTRIES,
+      filters: {
+        country: filters.country,
+        pathway: filters.pathway,
+        search: filters.search || null,
+        from: req.query.from || null,
+        to: req.query.to || null,
+        assisted: filters.assisted,
+        requestStatus: filters.requestStatus,
+      },
+      count: records.length,
+      records: full ? records : records.map(summarizeConsentRecord),
+      supportRequests,
+      pendingSupportRequests: supportRequests.filter((request) => request.status !== "CONTACTED").length,
     });
   } catch (error) {
     console.error("Get consent records error:", error);
@@ -191,8 +304,31 @@ async function getConsentRecords(req, res) {
   }
 }
 
+async function getConsentRecord(req, res) {
+  try {
+    const applicant = await prisma.applicant.findFirst({
+      where: {
+        id: String(req.params.applicantId || ""),
+        responses: { some: { questionCode: "CONSENT_VERSION" } },
+      },
+      select: CONSENT_APPLICANT_SELECT,
+    });
+
+    if (!applicant) {
+      return res.status(404).json({ success: false, message: "Consent record not found." });
+    }
+
+    return res.json({ success: true, record: buildConsentRecord(applicant) });
+  } catch (error) {
+    console.error("Get consent record error:", error);
+    return res.status(500).json({ success: false, message: "Failed to load the consent record." });
+  }
+}
+
 module.exports = {
   getCurrentConsent,
   getConsentRecords,
+  getConsentRecord,
+  readConsentFilters,
+  summarizeConsentRecord,
 };
-
