@@ -800,7 +800,47 @@ async function sendBasicSkillsTestInvitationForApplicant(req, res) {
   }
 }
 
+const NEW_LINK_COOLDOWN_MS = 10 * 60 * 1000;
+const NEW_LINK_RESPONSE =
+  "If this application is waiting for the Basic IT skills test, we have sent a new link to the email address on the application. It can take a few minutes to arrive. Please also check your spam or junk folder.";
+
+/*
+ * Applicants who cannot find their test email ask for a new link with their application reference.
+ * The link only ever goes to the email address already on the application, and the reply is the same
+ * whether or not the reference exists, so this cannot be used to look up applications or redirect links.
+ */
+async function requestNewBasicSkillsTestInvitation(req, res) {
+  const reference = normalizeReference(req.body?.reference);
+  if (!reference || reference.length > 40) {
+    return res.status(400).json({ success: false, message: "Enter your application reference, for example APP-DF-2026-AB12CD." });
+  }
+
+  try {
+    const applicant = await findApplicantForSkillsTest(reference);
+    const latest = applicant?.skillsTestInvitations?.[0];
+    const canSend =
+      applicant?.email &&
+      validateApplicantCanTakeTest(applicant).allowed &&
+      !findSubmittedAttempt(applicant) &&
+      // One new link per application every few minutes, so repeated requests can't flood the inbox.
+      !(latest && Date.now() - new Date(latest.createdAt).getTime() < NEW_LINK_COOLDOWN_MS);
+
+    if (canSend) {
+      const result = await createAndSendBasicSkillsTestInvitation(applicant);
+      if (!result.emailResult?.sent) {
+        console.warn("[skills-test] applicant-requested link was created but not emailed", { applicantId: applicant.id });
+      }
+    }
+
+    return res.status(202).json({ success: true, message: NEW_LINK_RESPONSE });
+  } catch (error) {
+    console.error("Request new Basic IT skills test link error:", error);
+    return res.status(500).json({ success: false, message: "We could not send a new link just now. Please try again later." });
+  }
+}
+
 module.exports = {
+  requestNewBasicSkillsTestInvitation,
   getBasicSkillsTestQuestions,
   getInvitationBasicSkillsTestQuestions,
   sendBasicSkillsTestInvitationForApplicant,

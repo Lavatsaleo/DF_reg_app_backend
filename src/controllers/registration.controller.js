@@ -6,6 +6,7 @@ const {
   getApplicationFormVersion,
 } = registrationFormQuestions;
 const { getEligibilityRules } = require("../data/pathwayEligibility");
+const { COUNTRY_CONTACTS } = require("../data/physicalAcademyConsent");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -496,6 +497,7 @@ async function findDuplicateApplication({ normalizedEmail, normalizedContactNumb
       pathway: true,
       registrationMode: true,
       screeningStatus: true,
+      country: true,
       createdAt: true,
     },
   });
@@ -1090,8 +1092,9 @@ async function saveRegistrationDraft(req, res) {
       if (existingApplicant) {
         return res.status(409).json({
           success: false,
+          reasonCode: "APPLICATION_EXISTS",
           message:
-            "A submitted application already exists for this mobile number. Use Check Status instead of creating a new draft.",
+            "An application has already been submitted with this mobile number. You can apply for one pathway only. Use Check status to follow your application.",
         });
       }
     }
@@ -1364,6 +1367,7 @@ async function submitRegistration(req, res) {
           ? existingApplicant.screeningStatus
           : "NOT_ELIGIBLE",
         submittedAt: existingApplicant.createdAt,
+        supportEmail: getSupportEmail(existingApplicant.country),
         data: {
           duplicate: true,
           existingApplicationOpened: true,
@@ -1382,6 +1386,7 @@ async function submitRegistration(req, res) {
             ? existingApplicant.screeningStatus
             : "NOT_ELIGIBLE",
           submittedAt: existingApplicant.createdAt,
+          supportEmail: getSupportEmail(existingApplicant.country),
         },
       });
     }
@@ -1967,6 +1972,28 @@ function getNextStepMessage(status, pathway, screeningStatus) {
   return messages[status] || "Your application is being processed.";
 }
 
+// The latest skills test link, as the applicant needs to see it. The email address is only shown
+// (masked) to someone who searched with the application reference.
+function summarizeTestInvitation(invitation, { includeEmail }) {
+  if (!invitation) return null;
+  return {
+    status: invitation.status,
+    ...(includeEmail ? { emailTo: maskEmail(invitation.emailTo) } : {}),
+    sentAt: invitation.sentAt,
+    expiresAt: invitation.expiresAt,
+    expired:
+      !["USED", "CANCELLED"].includes(invitation.status) &&
+      new Date(invitation.expiresAt).getTime() < Date.now(),
+    openedAt: invitation.openedAt,
+    usedAt: invitation.usedAt,
+  };
+}
+
+// The country team's public address for application questions, shown so applicants know who to ask.
+function getSupportEmail(country) {
+  return COUNTRY_CONTACTS[country]?.questions || null;
+}
+
 async function getRegistrationStatus(req, res) {
   try {
     const identifier = String(req.params.reference || "").trim();
@@ -2093,9 +2120,11 @@ async function getRegistrationStatus(req, res) {
             applicant.isEligible &&
             pathwayRequiresBasicSkillsTest(applicant.pathway) &&
             applicant.skillsTestAttempts.length === 0,
+          testInvitation: summarizeTestInvitation(applicant.skillsTestInvitations?.[0], { includeEmail: false }),
           skillsTest: { submitted: applicant.skillsTestAttempts.length > 0 },
           timeline: timeline.map(({ status, date }) => ({ status, date })),
           nextStepMessage,
+          supportEmail: getSupportEmail(applicant.country),
         },
       });
     }
@@ -2118,19 +2147,7 @@ async function getRegistrationStatus(req, res) {
           applicant.isEligible &&
           pathwayRequiresBasicSkillsTest(applicant.pathway) &&
           applicant.skillsTestAttempts.length === 0,
-        testInvitation: applicant.skillsTestInvitations?.[0]
-          ? {
-              status: applicant.skillsTestInvitations[0].status,
-              emailTo: maskEmail(applicant.skillsTestInvitations[0].emailTo),
-              sentAt: applicant.skillsTestInvitations[0].sentAt,
-              expiresAt: applicant.skillsTestInvitations[0].expiresAt,
-              expired:
-                !["USED", "CANCELLED"].includes(applicant.skillsTestInvitations[0].status) &&
-                new Date(applicant.skillsTestInvitations[0].expiresAt).getTime() < Date.now(),
-              openedAt: applicant.skillsTestInvitations[0].openedAt,
-              usedAt: applicant.skillsTestInvitations[0].usedAt,
-            }
-          : null,
+        testInvitation: summarizeTestInvitation(applicant.skillsTestInvitations?.[0], { includeEmail: true }),
         participantRegistrationInvitation:
           applicant.participantRegistrationInvitations?.[0]
             ? {
@@ -2156,6 +2173,7 @@ async function getRegistrationStatus(req, res) {
           : { submitted: false },
         timeline,
         nextStepMessage,
+        supportEmail: getSupportEmail(applicant.country),
       },
     });
   } catch (error) {
