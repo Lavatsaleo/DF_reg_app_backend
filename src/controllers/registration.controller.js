@@ -1,5 +1,5 @@
 const prisma = require("../config/prisma");
-const { uploadFileToS3 } = require("../services/fileUpload.service");
+const { uploadFileToS3, detectFileType, normalizeDocumentType } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
 const {
   getApplicationQuestionsForPathway,
@@ -506,20 +506,29 @@ function sanitizeDraftAnswers(value) {
     return {};
   }
 
-  return Object.entries(value).reduce((accumulator, [key, answer]) => {
-    if (answer === undefined) return accumulator;
+  // Public endpoint: bound the number and size of answers so a draft can't be used to store junk.
+  return Object.entries(value).slice(0, 300).reduce((accumulator, [key, answer]) => {
+    if (answer === undefined || !/^[A-Z0-9_]{1,80}$/i.test(key)) return accumulator;
 
-    if (answer === null || ["string", "number", "boolean"].includes(typeof answer)) {
+    if (typeof answer === "string") {
+      // Signatures are the longest answers (drawn path data).
+      accumulator[key] = answer.slice(0, 70000);
+      return accumulator;
+    }
+
+    if (answer === null || ["number", "boolean"].includes(typeof answer)) {
       accumulator[key] = answer;
       return accumulator;
     }
 
     if (Array.isArray(answer)) {
-      accumulator[key] = answer.filter((item) => item !== undefined);
+      accumulator[key] = answer
+        .filter((item) => item !== undefined && item !== null)
+        .slice(0, 50)
+        .map((item) => String(item).slice(0, 500));
       return accumulator;
     }
 
-    accumulator[key] = String(answer);
     return accumulator;
   }, {});
 }
@@ -569,8 +578,7 @@ function buildDraftPublicPayload(draft, { includeAnswers = false } = {}) {
         : ["VIRTUAL_ACADEMY", "DIGITAL_ENTREPRENEURSHIP"].includes(draft.pathway)
           ? "VIRTUAL"
           : "UNKNOWN",
-    contactNumber: draft.contactNumber,
-    email: draft.email,
+    ...(includeAnswers ? { contactNumber: draft.contactNumber, email: draft.email } : {}),
     documentType: draft.documentType || "DISABILITY_DOCUMENT",
     currentStep: draft.currentStep || 0,
     completionPercent: draft.completionPercent || 0,
@@ -1084,10 +1092,6 @@ async function saveRegistrationDraft(req, res) {
           success: false,
           message:
             "A submitted application already exists for this mobile number. Use Check Status instead of creating a new draft.",
-          applicationReference:
-            existingApplicant.status === "INELIGIBLE"
-              ? null
-              : existingApplicant.applicationReference,
         });
       }
     }
@@ -1105,13 +1109,20 @@ async function saveRegistrationDraft(req, res) {
       }
 
       if (!existingDraft && normalizedContactNumber) {
-        existingDraft = await tx.registrationDraft.findFirst({
+        const draftForNumber = await tx.registrationDraft.findFirst({
           where: {
             normalizedContactNumber,
             status: "INCOMPLETE",
           },
-          orderBy: { lastSavedAt: "desc" },
+          select: { id: true },
         });
+
+        if (draftForNumber) {
+          throw Object.assign(
+            new Error("An application is already saved for this mobile number. Use Continue a saved application to open it."),
+            { statusCode: 409 }
+          );
+        }
       }
 
       if (existingDraft) {
@@ -1168,7 +1179,7 @@ async function saveRegistrationDraft(req, res) {
 
     return res.status(error.statusCode || 500).json({
       success: false,
-      message: error.message || "Failed to save application draft.",
+      message: error.statusCode ? error.message : "Failed to save application draft.",
     });
   }
 }
@@ -1198,7 +1209,6 @@ async function getRegistrationDraft(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch application draft.",
-      error: error.message,
     });
   }
 }
@@ -1225,7 +1235,10 @@ async function resumeRegistrationDraft(req, res) {
     const verifiedByDateOfBirth =
       savedDateOfBirth && providedDateOfBirth && datesMatch(savedDateOfBirth, providedDateOfBirth);
     const verifiedByEmail = savedEmail && providedEmail && savedEmail === providedEmail;
-    const canResumeWithoutExtraVerification = !savedDateOfBirth && !savedEmail;
+    // Without saved details to check, only the private draft reference itself opens the draft.
+    const canResumeWithoutExtraVerification =
+      !savedDateOfBirth && !savedEmail &&
+      String(identifier).trim().toUpperCase() === draft.draftReference;
 
     if (!verifiedByDateOfBirth && !verifiedByEmail && !canResumeWithoutExtraVerification) {
       return res.status(403).json({
@@ -1246,7 +1259,6 @@ async function resumeRegistrationDraft(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to resume application draft.",
-      error: error.message,
     });
   }
 }
@@ -1255,11 +1267,23 @@ async function submitRegistration(req, res) {
   try {
     const { responses } = req.body;
 
+    // Reject a disguised or unsupported file before anything about the applicant is saved.
+    if ((req.files || []).some((file) => !detectFileType(file.buffer))) {
+      return res.status(400).json({
+        success: false,
+        message: "Each document must be a valid PDF, JPG or PNG file.",
+      });
+    }
+
     let parsedResponses = [];
 
     if (responses) {
-      parsedResponses =
-        typeof responses === "string" ? JSON.parse(responses) : responses;
+      try {
+        parsedResponses =
+          typeof responses === "string" ? JSON.parse(responses) : responses;
+      } catch {
+        return res.status(400).json({ success: false, message: "Registration responses are not valid." });
+      }
     }
 
     const submittedDraftReference = String(req.body.draftReference || "").trim().toUpperCase();
@@ -1629,21 +1653,19 @@ async function submitRegistration(req, res) {
 
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const documentType = req.body.documentType || "OTHER";
-
         const uploadedFile = await uploadFileToS3(
           file,
           applicant.id,
-          documentType
+          normalizeDocumentType(req.body.documentType)
         );
 
         const savedDocument = await prisma.applicantDocument.create({
           data: {
             applicantId: applicant.id,
-            documentType,
-            originalName: file.originalname,
+            documentType: uploadedFile.documentType,
+            originalName: uploadedFile.originalName,
             fileName: uploadedFile.fileName,
-            mimeType: file.mimetype,
+            mimeType: uploadedFile.mimeType,
             sizeBytes: file.size,
             storageBucket: uploadedFile.storageBucket,
             storageKey: uploadedFile.storageKey,
@@ -1775,7 +1797,6 @@ async function submitRegistration(req, res) {
 
     return res.status(500).json({
       message: "Failed to submit registration.",
-      error: error.message,
     });
   }
 }
@@ -1789,7 +1810,7 @@ async function getApplicants(req, res) {
       },
       include: {
         responses: true,
-        documents: true,
+        documents: { select: { id: true, documentType: true, originalName: true, mimeType: true, sizeBytes: true, createdAt: true } },
         syncLogs: true,
         statusHistory: {
           orderBy: {
@@ -1828,7 +1849,6 @@ async function getApplicants(req, res) {
 
     return res.status(500).json({
       message: "Failed to fetch applicants.",
-      error: error.message,
     });
   }
 }
@@ -1841,7 +1861,7 @@ async function getApplicantById(req, res) {
       where: { id },
       include: {
         responses: true,
-        documents: true,
+        documents: { select: { id: true, documentType: true, originalName: true, mimeType: true, sizeBytes: true, createdAt: true } },
         syncLogs: true,
         statusHistory: {
           orderBy: {
@@ -1892,7 +1912,6 @@ async function getApplicantById(req, res) {
 
     return res.status(500).json({
       message: "Failed to fetch applicant.",
-      error: error.message,
     });
   }
 }
@@ -1980,6 +1999,10 @@ async function getRegistrationStatus(req, res) {
           createdAt: "desc",
         },
       },
+      participantRegistrationInvitations: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
     };
 
     // Keep the existing application-reference lookup as the first option.
@@ -2008,10 +2031,14 @@ async function getRegistrationStatus(req, res) {
       const draft = await findIncompleteDraftByIdentifier(identifier);
 
       if (draft) {
+        const byReference = draft.draftReference === applicationReference;
+        const draftPayload = buildDraftPublicPayload(draft, { includeAnswers: false });
+        if (!byReference) delete draftPayload.draftReference;
         return res.json({
           success: true,
           data: {
-            ...buildDraftPublicPayload(draft, { includeAnswers: false }),
+            ...draftPayload,
+            limitedView: !byReference,
             lookupMethod: draft.draftReference === applicationReference
               ? "DRAFT_REFERENCE"
               : "MOBILE_NUMBER",
@@ -2043,6 +2070,36 @@ async function getRegistrationStatus(req, res) {
       });
     }
 
+    const timeline = applicant.statusHistory.map((item) => ({
+      status: item.status,
+      note: item.note,
+      date: item.createdAt,
+    }));
+    const nextStepMessage = getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus);
+
+    // Anyone can type a phone number, so that lookup shows progress only, never personal details or scores.
+    if (lookupMethod === "MOBILE_NUMBER") {
+      return res.json({
+        success: true,
+        data: {
+          limitedView: true,
+          status: applicant.status,
+          pathway: applicant.pathway,
+          isEligible: applicant.isEligible,
+          screeningStatus: applicant.screeningStatus,
+          submittedAt: applicant.createdAt,
+          lastUpdatedAt: applicant.updatedAt,
+          requiresBasicSkillsTest:
+            applicant.isEligible &&
+            pathwayRequiresBasicSkillsTest(applicant.pathway) &&
+            applicant.skillsTestAttempts.length === 0,
+          skillsTest: { submitted: applicant.skillsTestAttempts.length > 0 },
+          timeline: timeline.map(({ status, date }) => ({ status, date })),
+          nextStepMessage,
+        },
+      });
+    }
+
     return res.json({
       success: true,
       data: {
@@ -2054,14 +2111,9 @@ async function getRegistrationStatus(req, res) {
         isEligible: applicant.isEligible,
         eligibilityReason: applicant.eligibilityReason,
         screeningStatus: applicant.screeningStatus,
-        screeningVersion: applicant.screeningVersion,
-        ageAtApplication: applicant.ageAtApplication,
-        eligibilityReasonCodes: applicant.eligibilityReasonCodes,
-        eligibilityDetails: applicant.eligibilityDetails,
         submittedAt: applicant.createdAt,
         lastUpdatedAt: applicant.updatedAt,
         lookupMethod,
-        dhis2Synced: Boolean(applicant.dhis2TrackedEntityId),
         requiresBasicSkillsTest:
           applicant.isEligible &&
           pathwayRequiresBasicSkillsTest(applicant.pathway) &&
@@ -2102,12 +2154,8 @@ async function getRegistrationStatus(req, res) {
               submittedAt: applicant.skillsTestAttempts[0].submittedAt,
             }
           : { submitted: false },
-        timeline: applicant.statusHistory.map((item) => ({
-          status: item.status,
-          note: item.note,
-          date: item.createdAt,
-        })),
-        nextStepMessage: getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus),
+        timeline,
+        nextStepMessage,
       },
     });
   } catch (error) {
@@ -2116,7 +2164,6 @@ async function getRegistrationStatus(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to check application status.",
-      error: error.message,
     });
   }
 }

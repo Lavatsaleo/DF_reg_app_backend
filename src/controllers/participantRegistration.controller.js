@@ -1,7 +1,7 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const { hashToken } = require("../utils/tokenUtils");
-const { uploadFileToS3 } = require("../services/fileUpload.service");
+const { uploadFileToS3, detectFileType } = require("../services/fileUpload.service");
 const { sendEmail } = require("../services/email.service");
 const {
   createAndSendParticipantRegistrationInvitation,
@@ -540,16 +540,16 @@ async function uploadParticipantRegistrationDocument(req, res) {
       return res.status(400).json({ success: false, message: "Please choose a file to upload." });
     }
 
-    if (!ALLOWED_DOCUMENT_TYPES.includes(file.mimetype)) {
+    if (!ALLOWED_DOCUMENT_TYPES.includes(file.mimetype) || !detectFileType(file.buffer)) {
       return res.status(400).json({ success: false, message: "Please upload a PDF, JPG or PNG file." });
     }
 
     const uploaded = await uploadFileToS3(file, invitation.applicant.id, question.documentType);
     const document = {
       documentType: question.documentType,
-      originalName: file.originalname,
+      originalName: uploaded.originalName,
       fileName: uploaded.fileName,
-      mimeType: file.mimetype,
+      mimeType: uploaded.mimeType,
       sizeBytes: file.size,
       storageBucket: uploaded.storageBucket,
       storageKey: uploaded.storageKey,
@@ -607,9 +607,9 @@ async function saveParticipantRegistrationSupportRequest(req, res) {
       });
     }
 
-    const fullName = String(req.body.fullName || "").trim();
-    const contactNumber = String(req.body.contactNumber || "").trim();
-    const accommodation = String(req.body.accommodation || "").trim();
+    const fullName = String(req.body.fullName || "").trim().slice(0, 150);
+    const contactNumber = String(req.body.contactNumber || "").trim().slice(0, 30);
+    const accommodation = String(req.body.accommodation || "").trim().slice(0, 2000);
 
     if (!fullName || !contactNumber) {
       return res.status(400).json({
@@ -753,6 +753,11 @@ async function submitParticipantRegistration(req, res) {
       });
     }
 
+    const sentFiles = Object.values(req.files || {}).flat();
+    if (sentFiles.some((file) => !detectFileType(file.buffer))) {
+      return res.status(400).json({ success: false, message: "Each document must be a valid PDF, JPG or PNG file." });
+    }
+
     // Documents are normally uploaded as the participant goes; a file sent with the submission replaces the saved one.
     const savedDocuments = invitation.draftDocuments || {};
     const missingDocuments = DOCUMENT_QUESTIONS
@@ -783,9 +788,9 @@ async function submitParticipantRegistration(req, res) {
         uploadedDocuments.push({
           applicantId,
           documentType: question.documentType,
-          originalName: file.originalname,
+          originalName: uploaded.originalName,
           fileName: uploaded.fileName,
-          mimeType: file.mimetype,
+          mimeType: uploaded.mimeType,
           sizeBytes: file.size,
           storageBucket: uploaded.storageBucket,
           storageKey: uploaded.storageKey,
@@ -913,7 +918,6 @@ async function submitParticipantRegistration(req, res) {
     return res.status(500).json({
       success: false,
       message: "Unable to submit the participant registration form.",
-      error: error.message,
     });
   }
 }
@@ -1002,7 +1006,6 @@ async function resendParticipantRegistrationInvitation(req, res) {
     return res.status(500).json({
       success: false,
       message: "Unable to send the participant registration invitation.",
-      error: error.message,
     });
   }
 }

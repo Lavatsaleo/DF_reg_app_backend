@@ -1,10 +1,11 @@
 const express = require("express");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
+const { rateLimits } = require("../middleware/security.middleware");
 const { getCurrentConsent, getConsentRecords, getConsentRecord } = require("../controllers/consent.controller");
 
 const { createSupportRequest, markSupportRequestContacted } = require("../controllers/consentSupport.controller");
 const router = express.Router();
-router.post("/support-requests", createSupportRequest);
+router.post("/support-requests", rateLimits.contactRequest, createSupportRequest);
 router.patch("/support-requests/:id/contacted", requireAuth, requireRoles("ADMIN"), markSupportRequestContacted);
 
 router.get("/current", getCurrentConsent);

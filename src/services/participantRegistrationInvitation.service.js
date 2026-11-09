@@ -1,5 +1,6 @@
 const prisma = require("../config/prisma");
 const { sendEmail } = require("./email.service");
+const { escapeHtml } = require("../utils/html");
 const { generateSecureToken, hashToken } = require("../utils/tokenUtils");
 const {
   PARTICIPANT_REGISTRATION_FORM_VERSION,
@@ -54,15 +55,15 @@ function buildInvitationEmail({ applicant, invitationUrl, expiresAt }) {
   ].join("\n");
 
   const html = `
-    <p>Dear ${fullName},</p>
+    <p>Dear ${escapeHtml(fullName)},</p>
     <p>Congratulations. You have been selected to proceed to the <strong>participant registration stage</strong> for Digital Futures.</p>
     <p>
       <strong>Pathway:</strong> ${applicant.pathway === "PHYSICAL_ACADEMY" ? "Physical Academy" : "Virtual Academy"}<br />
-      <strong>Application reference:</strong> ${applicant.applicationReference || "Not available"}<br />
-      <strong>Participant code:</strong> ${applicant.participantCode || "Not available"}
+      <strong>Application reference:</strong> ${escapeHtml(applicant.applicationReference || "Not available")}<br />
+      <strong>Participant code:</strong> ${escapeHtml(applicant.participantCode || "Not available")}
     </p>
     <p>Please complete the <strong>Participant Registration &amp; Baseline Survey</strong> using the secure link below.</p>
-    <p><a href="${invitationUrl}">Open participant registration form</a></p>
+    <p><a href="${escapeHtml(invitationUrl)}">Open participant registration form</a></p>
     <p>This secure link expires on <strong>${expiryText}</strong>. It is linked to your application and should not be shared with anyone else.</p>
     <p>You will be asked to confirm your consent, answer the registration and baseline questions, and upload the required ID and education documents.</p>
     <p>Your answers are saved as you go, so you can stop and come back later using this same link.</p>

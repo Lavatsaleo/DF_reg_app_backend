@@ -9,7 +9,7 @@ const {
 } = require("../services/committeeAssignment.service");
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
 const { getAttemptPassMark } = require("../data/basicSkillsTestQuestions");
-const { hashPassword } = require("../utils/passwordUtils");
+const { hashPassword, getPasswordProblem } = require("../utils/passwordUtils");
 const {
   pathwaySupportsParticipantRegistration,
   createParticipantRegistrationInvitation,
@@ -475,7 +475,6 @@ async function listCommitteeMembers(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load committee members.",
-      error: error.message,
     });
   }
 }
@@ -513,10 +512,11 @@ async function createCommitteeMember(req, res) {
     const createLogin = Boolean(req.body.createLogin);
     const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
 
-    if (createLogin && temporaryPassword.length < 8) {
+    const passwordProblem = createLogin ? getPasswordProblem(temporaryPassword, { email: req.body.email, fullName: req.body.fullName }) : "";
+    if (passwordProblem) {
       return res.status(400).json({
         success: false,
-        message: "Temporary password must be at least 8 characters when creating a staff login.",
+        message: `Temporary password: ${passwordProblem}`,
       });
     }
 
@@ -581,7 +581,6 @@ async function createCommitteeMember(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to add committee member.",
-      error: error.message,
     });
   }
 }
@@ -591,10 +590,11 @@ async function createCommitteeMemberLogin(req, res) {
     const memberId = req.params.memberId;
     const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
 
-    if (!temporaryPassword || temporaryPassword.length < 8) {
+    const passwordProblem = getPasswordProblem(temporaryPassword);
+    if (passwordProblem) {
       return res.status(400).json({
         success: false,
-        message: "Temporary password must be at least 8 characters.",
+        message: `Temporary password: ${passwordProblem}`,
       });
     }
 
@@ -693,7 +693,6 @@ async function createCommitteeMemberLogin(req, res) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.statusCode ? error.message : "Failed to create committee member login.",
-      error: error.statusCode ? undefined : error.message,
     });
   }
 }
@@ -798,7 +797,6 @@ async function updateCommitteeMember(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to update committee member.",
-      error: error.message,
     });
   }
 }
@@ -868,7 +866,6 @@ async function getCommitteeOverview(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load committee overview.",
-      error: error.message,
     });
   }
 }
@@ -1047,7 +1044,6 @@ async function listCommitteeAssignments(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load committee assignments.",
-      error: error.message,
     });
   }
 }
@@ -1080,7 +1076,6 @@ async function listUnassignedReadyApplicants(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load unassigned applicants ready for review.",
-      error: error.message,
     });
   }
 }
@@ -1117,7 +1112,6 @@ async function autoAssignReadyApplicants(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to run automatic assignment.",
-      error: error.message,
     });
   }
 }
@@ -1164,7 +1158,6 @@ async function assignSingleApplicant(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to assign applicant.",
-      error: error.message,
     });
   }
 }
@@ -1272,7 +1265,6 @@ async function reassignApplicant(req, res) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.statusCode ? error.message : "Failed to reassign applicant.",
-      error: error.statusCode ? undefined : error.message,
     });
   }
 }
@@ -1329,7 +1321,6 @@ async function startReview(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to start review.",
-      error: error.message,
     });
   }
 }
@@ -1524,7 +1515,6 @@ async function submitCommitteeReview(req, res) {
     return res.status(error.statusCode || 500).json({
       success: false,
       message: error.statusCode ? error.message : "Failed to submit committee review.",
-      error: error.statusCode ? undefined : error.message,
     });
   }
 }
@@ -1601,7 +1591,6 @@ async function listSelectedParticipantsReport(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load the selected participants report.",
-      error: error.message,
     });
   }
 }

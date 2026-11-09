@@ -323,7 +323,6 @@ async function getBasicSkillsTestQuestions(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load the basic IT skills test.",
-      error: error.message,
     });
   }
 }
@@ -372,7 +371,6 @@ async function getInvitationBasicSkillsTestQuestions(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load the Basic IT skills test invitation.",
-      error: error.message,
     });
   }
 }
@@ -580,7 +578,6 @@ async function submitBasicSkillsTest(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to submit the Basic IT skills test.",
-      error: error.message,
     });
   }
 }
@@ -649,7 +646,6 @@ async function submitInvitationBasicSkillsTest(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to submit the Basic IT skills test.",
-      error: error.message,
     });
   }
 }
@@ -800,7 +796,6 @@ async function sendBasicSkillsTestInvitationForApplicant(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to create or send the Basic IT skills test invitation.",
-      error: error.message,
     });
   }
 }

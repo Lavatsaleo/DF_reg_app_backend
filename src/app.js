@@ -9,8 +9,23 @@ const committeeRoutes = require("./routes/committee.routes");
 const authRoutes = require("./routes/auth.routes");
 const consentRoutes = require("./routes/consent.routes");
 const participantRegistrationRoutes = require("./routes/participantRegistration.routes");
+const {
+  securityHeaders,
+  rateLimits,
+  redactUrl,
+  notFound,
+  errorHandler,
+} = require("./middleware/security.middleware");
 
 const app = express();
+
+app.disable("x-powered-by");
+/*
+ * Client addresses (used for rate limits) come from X-Forwarded-For only when the request
+ * arrived through a proxy on a private network. Set TRUST_PROXY to the number of proxy hops
+ * (e.g. 1) if the reverse proxy sits on a public address.
+ */
+app.set("trust proxy", process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY : "loopback, linklocal, uniquelocal");
 
 function getAllowedOrigins() {
   return [process.env.FRONTEND_BASE_URL, ...(process.env.CORS_ALLOWED_ORIGINS || "").split(",")]
@@ -23,12 +38,20 @@ app.use(cors({
   origin(origin, callback) {
     callback(null, !origin || getAllowedOrigins().includes(origin));
   },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  allowedHeaders: ["Authorization", "Content-Type"],
+  maxAge: 600,
 }));
-app.use(morgan("dev"));
+app.use(securityHeaders);
 
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+morgan.token("safe-url", (req) => redactUrl(req.originalUrl));
+app.use(morgan(":method :safe-url :status :res[content-length] - :response-time ms"));
 
+// Large files go through multipart uploads; JSON bodies only carry answers and signatures.
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false, limit: "100kb" }));
+
+app.use("/api", rateLimits.api);
 app.use("/api/health", healthRoutes);
 app.use("/api/dashboard", require("./routes/applicationDashboard.routes"));
 app.use("/api/registrations", registrationRoutes);
@@ -38,11 +61,7 @@ app.use("/api/committee", committeeRoutes);
 app.use("/api/consents", consentRoutes);
 app.use("/api/participant-registration", participantRegistrationRoutes);
 
-app.use((req, res) => {
-  res.status(404).json({
-    message: "Route not found",
-    path: req.originalUrl,
-  });
-});
+app.use(notFound);
+app.use(errorHandler);
 
 module.exports = app;

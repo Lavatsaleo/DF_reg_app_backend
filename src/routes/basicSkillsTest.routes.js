@@ -1,5 +1,6 @@
 const express = require("express");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
+const { rateLimits } = require("../middleware/security.middleware");
 const {
   getInvitationBasicSkillsTestQuestions,
   sendBasicSkillsTestInvitationForApplicant,
@@ -10,8 +11,8 @@ const {
 const router = express.Router();
 
 // Production applicant flow: applicant opens the private email invitation link.
-router.get("/invite/:token/questions", getInvitationBasicSkillsTestQuestions);
-router.post("/invite/:token/submit", submitInvitationBasicSkillsTest);
+router.get("/invite/:token/questions", rateLimits.invitation, getInvitationBasicSkillsTestQuestions);
+router.post("/invite/:token/submit", rateLimits.invitation, submitInvitationBasicSkillsTest);
 
 // Only admins and country admins see applicant email addresses for troubleshooting.
 router.get(

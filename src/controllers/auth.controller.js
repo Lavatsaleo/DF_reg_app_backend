@@ -1,7 +1,15 @@
 const prisma = require("../config/prisma");
 const { createAuthToken, verifyAuthToken } = require("../utils/authToken");
 const { generateSecureToken, hashToken } = require("../utils/tokenUtils");
-const { hashPassword, verifyPassword } = require("../utils/passwordUtils");
+const crypto = require("crypto");
+const {
+  hashPassword,
+  verifyPassword,
+  verifyPasswordAgainstNothing,
+  getPasswordProblem,
+  MAX_PASSWORD_LENGTH,
+} = require("../utils/passwordUtils");
+const { escapeHtml } = require("../utils/html");
 const { normalizeEmail } = require("../utils/normalizers");
 const { sendEmail } = require("../services/email.service");
 const { COUNTRIES, normalizeCountry, getUserCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
@@ -50,13 +58,25 @@ function getStaffTokenExpirySeconds() {
   return Math.max(1, hours) * 60 * 60;
 }
 
+// req.ip honours the app's trust-proxy setting, so a client can't forge it with X-Forwarded-For.
 function getRequestIp(req) {
-  return (
-    req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    req.ip ||
-    null
-  );
+  return req.ip || req.socket?.remoteAddress || null;
+}
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  return a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+}
+
+const SSO_STATE_COOKIE = "df_sso_state";
+
+function readCookie(req, name) {
+  const match = String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : "";
 }
 
 function summarizeUser(user) {
@@ -170,6 +190,13 @@ async function fetchJson(url, options = {}) {
 
 async function bootstrapAdmin(req, res) {
   try {
+    // Creating the first admin needs a setup token from the server environment, so nobody can claim
+    // an empty deployment. Remove BOOTSTRAP_ADMIN_TOKEN once the first admin exists.
+    const setupToken = process.env.BOOTSTRAP_ADMIN_TOKEN;
+    if (!setupToken || setupToken.length < 24 || !safeEqual(req.get("x-bootstrap-token"), setupToken)) {
+      return res.status(404).json({ success: false, message: "Route not found." });
+    }
+
     const existingUsers = await prisma.staffUser.count();
     if (existingUsers > 0) {
       return res.status(409).json({
@@ -182,10 +209,11 @@ async function bootstrapAdmin(req, res) {
     const email = normalizeEmail(req.body.email || process.env.BOOTSTRAP_ADMIN_EMAIL);
     const password = toSafeString(req.body.password || process.env.BOOTSTRAP_ADMIN_PASSWORD);
 
-    if (!email || !password || password.length < 8) {
+    const passwordProblem = getPasswordProblem(password, { email, fullName });
+    if (!email || passwordProblem) {
       return res.status(400).json({
         success: false,
-        message: "Provide an admin email and a password with at least 8 characters.",
+        message: passwordProblem || "Provide an admin email address.",
       });
     }
 
@@ -214,7 +242,6 @@ async function bootstrapAdmin(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to create initial admin account.",
-      error: error.message,
     });
   }
 }
@@ -224,7 +251,7 @@ async function login(req, res) {
     const email = normalizeEmail(req.body.email);
     const password = toSafeString(req.body.password);
 
-    if (!email || !password) {
+    if (!email || !password || password.length > MAX_PASSWORD_LENGTH) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required.",
@@ -236,7 +263,12 @@ async function login(req, res) {
       include: { committeeMember: true },
     });
 
-    if (!user || !user.isActive || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+    const passwordMatches = user?.passwordHash
+      ? verifyPassword(password, user.passwordHash)
+      : verifyPasswordAgainstNothing(password);
+
+    if (!user || !user.isActive || !passwordMatches) {
+      console.warn("[auth] failed staff sign in", { ip: getRequestIp(req) });
       return res.status(401).json({
         success: false,
         message: "Invalid email or password.",
@@ -262,7 +294,6 @@ async function login(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to sign in.",
-      error: error.message,
     });
   }
 }
@@ -326,19 +357,20 @@ async function requestPasswordReset(req, res) {
         to: user.email,
         subject: "Reset your Digital Futures staff password",
         text: `Hello ${user.fullName},\n\nUse this link to reset your Digital Futures staff password:\n${resetUrl}\n\nThis link expires soon. If you did not request this, you can ignore this message.`,
-        html: `<p>Hello ${user.fullName},</p><p>Use the link below to reset your Digital Futures staff password:</p><p><a href="${resetUrl}">Reset password</a></p><p>This link expires soon. If you did not request this, you can ignore this message.</p>`,
+        html: `<p>Hello ${escapeHtml(user.fullName)},</p><p>Use the link below to reset your Digital Futures staff password:</p><p><a href="${escapeHtml(resetUrl)}">Reset password</a></p><p>This link expires soon. If you did not request this, you can ignore this message.</p>`,
       });
 
       emailSent = result.sent === true;
     }
 
+    // The same answer for every email address, so the form can't be used to discover staff accounts.
     const response = {
       success: true,
       message: "If this email is linked to an active staff account, password reset instructions will be sent.",
-      emailSent,
     };
 
-    if (resetUrl && !emailSent) {
+    // Showing the link on screen would let anyone reset any account; only on a developer machine.
+    if (resetUrl && !emailSent && process.env.NODE_ENV === "development") {
       response.localResetUrl = resetUrl;
       response.message = "SMTP is not configured yet. Use the temporary reset link shown below for local testing.";
     }
@@ -349,7 +381,6 @@ async function requestPasswordReset(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to start password reset.",
-      error: error.message,
     });
   }
 }
@@ -359,10 +390,10 @@ async function completePasswordReset(req, res) {
     const token = toSafeString(req.body.token);
     const password = toSafeString(req.body.password);
 
-    if (!token || !password || password.length < 8) {
+    if (!token) {
       return res.status(400).json({
         success: false,
-        message: "Provide a valid reset link and a new password with at least 8 characters.",
+        message: "This password reset link is invalid or has expired.",
       });
     }
 
@@ -376,6 +407,11 @@ async function completePasswordReset(req, res) {
         success: false,
         message: "This password reset link is invalid or has expired.",
       });
+    }
+
+    const passwordProblem = getPasswordProblem(password, resetToken.staffUser);
+    if (passwordProblem) {
+      return res.status(400).json({ success: false, message: passwordProblem });
     }
 
     if ((resetToken.staffUser.authProvider || "LOCAL") === "SSO") {
@@ -409,7 +445,6 @@ async function completePasswordReset(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to reset password.",
-      error: error.message,
     });
   }
 }
@@ -432,10 +467,20 @@ async function startSso(req, res) {
       });
     }
 
+    const nonce = generateSecureToken();
     const state = createAuthToken({
       type: "SSO_STATE",
-      nonce: generateSecureToken(),
+      nonce,
     }, 10 * 60);
+
+    // The callback must come back to the same browser, which stops sign-in requests being forged.
+    res.cookie(SSO_STATE_COOKIE, nonce, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000,
+      path: "/api/auth/sso",
+    });
 
     const authorizationUrl = new URL(process.env.SSO_AUTHORIZATION_URL);
     authorizationUrl.searchParams.set("client_id", process.env.SSO_CLIENT_ID);
@@ -450,7 +495,6 @@ async function startSso(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to start single sign-on.",
-      error: error.message,
     });
   }
 }
@@ -462,11 +506,13 @@ async function ssoCallback(req, res) {
     }
 
     if (req.query.error) {
-      return redirectSsoError(res, req.query.error_description || req.query.error);
+      return redirectSsoError(res, "Single sign-on was cancelled or refused. Please try again.");
     }
 
     const state = verifyAuthToken(req.query.state);
-    if (!state || state.type !== "SSO_STATE") {
+    const browserNonce = readCookie(req, SSO_STATE_COOKIE);
+    res.clearCookie(SSO_STATE_COOKIE, { path: "/api/auth/sso" });
+    if (!state || state.type !== "SSO_STATE" || !safeEqual(state.nonce, browserNonce)) {
       return redirectSsoError(res, "The single sign-on session expired. Please try again.");
     }
 
@@ -566,7 +612,8 @@ async function ssoCallback(req, res) {
     }
 
     const sessionToken = createStaffSession(user);
-    return res.redirect(buildFrontendRedirect("/staff-sso", { token: sessionToken }));
+    // A fragment never reaches servers, proxies or Referer headers, unlike a query string.
+    return res.redirect(`${buildFrontendRedirect("/staff-sso")}#token=${encodeURIComponent(sessionToken)}`);
   } catch (error) {
     console.error("SSO callback error:", error);
     return redirectSsoError(res, "Single sign-on failed. Please try again or use staff email sign in.");
@@ -590,7 +637,6 @@ async function listStaffUsers(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to load staff users.",
-      error: error.message,
     });
   }
 }
@@ -604,11 +650,16 @@ async function createStaffUser(req, res) {
     const committeeMemberId = toSafeString(req.body.committeeMemberId) || null;
     let country = normalizeCountry(req.body.country);
 
-    if (!fullName || !email || !password || password.length < 8) {
+    if (!fullName || !email) {
       return res.status(400).json({
         success: false,
-        message: "Full name, valid email and a password with at least 8 characters are required.",
+        message: "Full name and a valid email are required.",
       });
+    }
+
+    const passwordProblem = getPasswordProblem(password, { email, fullName });
+    if (passwordProblem) {
+      return res.status(400).json({ success: false, message: passwordProblem });
     }
 
     if (role === "COMMITTEE_MEMBER" && !committeeMemberId) {
@@ -673,7 +724,6 @@ async function createStaffUser(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to create staff user.",
-      error: error.message,
     });
   }
 }
@@ -691,15 +741,17 @@ async function updateStaffUser(req, res) {
     if (req.body.committeeMemberId !== undefined) data.committeeMemberId = toSafeString(req.body.committeeMemberId) || null;
     if (req.body.password) {
       const password = toSafeString(req.body.password);
-      if (password.length < 8) {
-        return res.status(400).json({
-          success: false,
-          message: "Password must be at least 8 characters.",
-        });
+      const passwordProblem = getPasswordProblem(password, { email: data.email, fullName: data.fullName });
+      if (passwordProblem) {
+        return res.status(400).json({ success: false, message: passwordProblem });
       }
       data.passwordHash = hashPassword(password);
       data.authProvider = "LOCAL";
       data.lastPasswordResetAt = new Date();
+      data.tokenVersion = { increment: 1 };
+    }
+
+    if (data.role !== undefined || data.isActive === false || data.country !== undefined) {
       data.tokenVersion = { increment: 1 };
     }
 
@@ -748,7 +800,6 @@ async function updateStaffUser(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to update staff user.",
-      error: error.message,
     });
   }
 }
