@@ -103,8 +103,12 @@ test('uploads are identified by content, and storage paths ignore request values
 });
 
 test('new staff passwords must be long and not easy to guess', () => {
-  assert.match(getPasswordProblem('short1'), /at least 10/);
-  assert.match(getPasswordProblem('password123'), /easy to guess/);
+  assert.match(getPasswordProblem('short1'), /at least 12/);
+  assert.match(getPasswordProblem('Password123!'), /easy to guess/);
+  assert.match(getPasswordProblem('Sightsavers2026!'), /easy to guess/);
+  assert.match(getPasswordProblem('blue-river-lantern-42'), /uppercase letter/);
+  assert.match(getPasswordProblem('BlueRiverLantern42'), /symbol/);
+  assert.match(getPasswordProblem('password1234'), /easy to guess/);
   assert.match(getPasswordProblem('aaaaaaaaaaaa'), /easy to guess/);
   assert.match(getPasswordProblem('jane.otieno-2026!', { email: 'jane.otieno@example.org' }), /name or email/);
   assert.match(getPasswordProblem('x'.repeat(129)), /no more than 128/);

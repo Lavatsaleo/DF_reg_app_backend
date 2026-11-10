@@ -9,7 +9,8 @@ const {
 } = require("../services/committeeAssignment.service");
 const { normalizeEmail, normalizeContactNumber } = require("../utils/normalizers");
 const { getAttemptPassMark } = require("../data/basicSkillsTestQuestions");
-const { hashPassword, getPasswordProblem } = require("../utils/passwordUtils");
+const { hashPassword, getNewPasswordProblem } = require("../utils/passwordUtils");
+const { sendPasswordResetLink } = require("../services/passwordReset.service");
 const {
   pathwaySupportsParticipantRegistration,
   createParticipantRegistrationInvitation,
@@ -510,13 +511,15 @@ async function createCommitteeMember(req, res) {
     }
 
     const createLogin = Boolean(req.body.createLogin);
-    const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
+    const password = toSafeString(req.body.password);
 
-    const passwordProblem = createLogin ? getPasswordProblem(temporaryPassword, { email: req.body.email, fullName: req.body.fullName }) : "";
+    const passwordProblem = createLogin
+      ? getNewPasswordProblem(password, req.body.confirmPassword, { email: req.body.email, fullName: req.body.fullName })
+      : "";
     if (passwordProblem) {
       return res.status(400).json({
         success: false,
-        message: `Temporary password: ${passwordProblem}`,
+        message: passwordProblem,
       });
     }
 
@@ -539,7 +542,7 @@ async function createCommitteeMember(req, res) {
           data: {
             fullName,
             email,
-            passwordHash: hashPassword(temporaryPassword),
+            passwordHash: hashPassword(password),
             role: role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER",
             country,
             committeeMemberId: member.id,
@@ -588,15 +591,7 @@ async function createCommitteeMember(req, res) {
 async function createCommitteeMemberLogin(req, res) {
   try {
     const memberId = req.params.memberId;
-    const temporaryPassword = toSafeString(req.body.temporaryPassword || req.body.password);
-
-    const passwordProblem = getPasswordProblem(temporaryPassword);
-    if (passwordProblem) {
-      return res.status(400).json({
-        success: false,
-        message: `Temporary password: ${passwordProblem}`,
-      });
-    }
+    const password = toSafeString(req.body.password);
 
     const result = await prisma.$transaction(async (tx) => {
       const member = await tx.committeeMember.findUnique({
@@ -616,6 +611,13 @@ async function createCommitteeMemberLogin(req, res) {
         throw err;
       }
 
+      const passwordProblem = getNewPasswordProblem(password, req.body.confirmPassword, member);
+      if (passwordProblem) {
+        const err = new Error(passwordProblem);
+        err.statusCode = 400;
+        throw err;
+      }
+
       const role = member.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
       const existingLinkedUser = member.staffUsers.find((user) => user.isActive);
 
@@ -627,7 +629,7 @@ async function createCommitteeMemberLogin(req, res) {
             email: member.email,
             role,
             country: member.country || null,
-            passwordHash: hashPassword(temporaryPassword),
+            passwordHash: hashPassword(password),
             authProvider: "LOCAL",
             isActive: true,
             lastPasswordResetAt: new Date(),
@@ -651,7 +653,7 @@ async function createCommitteeMemberLogin(req, res) {
             role,
             country: member.country || null,
             committeeMemberId: member.id,
-            passwordHash: hashPassword(temporaryPassword),
+            passwordHash: hashPassword(password),
             authProvider: "LOCAL",
             isActive: true,
             lastPasswordResetAt: new Date(),
@@ -667,7 +669,7 @@ async function createCommitteeMemberLogin(req, res) {
         data: {
           fullName: member.fullName,
           email: member.email,
-          passwordHash: hashPassword(temporaryPassword),
+          passwordHash: hashPassword(password),
           role,
           country: member.country || null,
           committeeMemberId: member.id,
@@ -694,6 +696,64 @@ async function createCommitteeMemberLogin(req, res) {
       success: false,
       message: error.statusCode ? error.message : "Failed to create committee member login.",
     });
+  }
+}
+
+// Emails the member a single-use link to choose their own password.
+async function sendCommitteeMemberPasswordReset(req, res) {
+  try {
+    const member = await prisma.committeeMember.findUnique({
+      where: { id: req.params.memberId },
+      include: { staffUsers: true },
+    });
+
+    if (!member) {
+      return res.status(404).json({ success: false, message: "Committee member not found." });
+    }
+
+    if (!canAccessCountry(req.user, member.country)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only manage committee logins for your assigned country.",
+      });
+    }
+
+    const staffUser = member.staffUsers.find((user) => user.isActive);
+    if (!staffUser) {
+      return res.status(400).json({
+        success: false,
+        message: "This member does not have a login yet. Create a login for them first.",
+      });
+    }
+
+    if ((staffUser.authProvider || "LOCAL") === "SSO") {
+      return res.status(400).json({
+        success: false,
+        message: "This member signs in with organisation single sign-on, so their password is managed there.",
+      });
+    }
+
+    const result = await sendPasswordResetLink(staffUser, {
+      requestedIp: req.ip || null,
+      requestedByAdmin: true,
+    });
+
+    if (!result.sent) {
+      const response = {
+        success: false,
+        message: "The reset email could not be sent. Check the email settings and try again.",
+      };
+      if (process.env.NODE_ENV === "development") response.localResetUrl = result.resetUrl;
+      return res.status(502).json(response);
+    }
+
+    return res.json({
+      success: true,
+      message: `A password reset link has been emailed to ${staffUser.email}. It works once and expires soon.`,
+    });
+  } catch (error) {
+    console.error("Send committee member password reset error:", error);
+    return res.status(500).json({ success: false, message: "Failed to send the password reset link." });
   }
 }
 
@@ -1599,6 +1659,7 @@ module.exports = {
   listCommitteeMembers,
   createCommitteeMember,
   createCommitteeMemberLogin,
+  sendCommitteeMemberPasswordReset,
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,

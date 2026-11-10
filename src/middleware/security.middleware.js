@@ -84,6 +84,8 @@ const rateLimits = {
   }),
   loginByAddress: createRateLimiter({ name: "login-ip", windowMs: 15 * MINUTE, max: 40 }),
   passwordReset: createRateLimiter({ name: "password-reset", windowMs: 60 * MINUTE, max: 6 }),
+  // Admins sending set-password links to the people they manage.
+  adminPasswordReset: createRateLimiter({ name: "admin-password-reset", windowMs: 60 * MINUTE, max: 40 }),
   bootstrap: createRateLimiter({ name: "bootstrap", windowMs: 60 * MINUTE, max: 5 }),
   // Public lookups by reference or phone number: limits guessing other people's details.
   publicLookup: createRateLimiter({

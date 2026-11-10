@@ -3,6 +3,7 @@ const {
   listCommitteeMembers,
   createCommitteeMember,
   createCommitteeMemberLogin,
+  sendCommitteeMemberPasswordReset,
   updateCommitteeMember,
   getCommitteeOverview,
   listCommitteeAssignments,
@@ -16,6 +17,7 @@ const {
   listSelectedParticipantsReport,
 } = require("../controllers/committee.controller");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
+const { rateLimits } = require("../middleware/security.middleware");
 
 const router = express.Router();
 
@@ -26,6 +28,7 @@ router.get("/members", listCommitteeMembers);
 router.post("/members", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMember);
 router.patch("/members/:memberId", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), updateCommitteeMember);
 router.post("/members/:memberId/login", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMemberLogin);
+router.post("/members/:memberId/password-reset", rateLimits.adminPasswordReset, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), sendCommitteeMemberPasswordReset);
 
 router.get("/assignments", listCommitteeAssignments);
 router.get("/assignments/:assignmentId/application", getBlindReviewApplication);

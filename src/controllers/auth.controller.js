@@ -7,11 +7,11 @@ const {
   verifyPassword,
   verifyPasswordAgainstNothing,
   getPasswordProblem,
+  getNewPasswordProblem,
   MAX_PASSWORD_LENGTH,
 } = require("../utils/passwordUtils");
-const { escapeHtml } = require("../utils/html");
 const { normalizeEmail } = require("../utils/normalizers");
-const { sendEmail } = require("../services/email.service");
+const { sendPasswordResetLink } = require("../services/passwordReset.service");
 const { COUNTRIES, normalizeCountry, getUserCountry, getApplicantCountryFilter } = require("../utils/countryAccess");
 
 const ALLOWED_ROLES = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER", "VIEWER"];
@@ -36,11 +36,6 @@ function getFrontendBaseUrl() {
 
 function getBackendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
-}
-
-function getPasswordResetExpiryDate() {
-  const minutes = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60);
-  return new Date(Date.now() + Math.max(15, minutes) * 60 * 1000);
 }
 
 function getStaffIdleTimeoutMinutes() {
@@ -330,37 +325,9 @@ async function requestPasswordReset(req, res) {
     let emailSent = false;
 
     if (user && user.isActive && (user.authProvider || "LOCAL") !== "SSO") {
-      const token = generateSecureToken();
-      const tokenHash = hashToken(token);
-      resetUrl = `${getFrontendBaseUrl()}/reset-password/${encodeURIComponent(token)}`;
-
-      await prisma.$transaction([
-        prisma.passwordResetToken.updateMany({
-          where: {
-            staffUserId: user.id,
-            usedAt: null,
-            expiresAt: { gt: new Date() },
-          },
-          data: { usedAt: new Date() },
-        }),
-        prisma.passwordResetToken.create({
-          data: {
-            staffUserId: user.id,
-            tokenHash,
-            expiresAt: getPasswordResetExpiryDate(),
-            requestedIp: getRequestIp(req),
-          },
-        }),
-      ]);
-
-      const result = await sendEmail({
-        to: user.email,
-        subject: "Reset your Digital Futures staff password",
-        text: `Hello ${user.fullName},\n\nUse this link to reset your Digital Futures staff password:\n${resetUrl}\n\nThis link expires soon. If you did not request this, you can ignore this message.`,
-        html: `<p>Hello ${escapeHtml(user.fullName)},</p><p>Use the link below to reset your Digital Futures staff password:</p><p><a href="${escapeHtml(resetUrl)}">Reset password</a></p><p>This link expires soon. If you did not request this, you can ignore this message.</p>`,
-      });
-
-      emailSent = result.sent === true;
+      const result = await sendPasswordResetLink(user, { requestedIp: getRequestIp(req) });
+      resetUrl = result.resetUrl;
+      emailSent = result.sent;
     }
 
     // The same answer for every email address, so the form can't be used to discover staff accounts.
@@ -409,7 +376,7 @@ async function completePasswordReset(req, res) {
       });
     }
 
-    const passwordProblem = getPasswordProblem(password, resetToken.staffUser);
+    const passwordProblem = getNewPasswordProblem(password, req.body.confirmPassword, resetToken.staffUser);
     if (passwordProblem) {
       return res.status(400).json({ success: false, message: passwordProblem });
     }
@@ -620,6 +587,40 @@ async function ssoCallback(req, res) {
   }
 }
 
+// An admin emails a staff user a single-use link to choose their own password.
+async function sendStaffUserPasswordReset(req, res) {
+  try {
+    const user = await prisma.staffUser.findFirst({
+      where: { id: req.params.userId, ...getApplicantCountryFilter(req.user) },
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Staff user not found." });
+    }
+    if (!user.isActive) {
+      return res.status(400).json({ success: false, message: "This account is inactive. Activate it before sending a reset link." });
+    }
+    if ((user.authProvider || "LOCAL") === "SSO") {
+      return res.status(400).json({ success: false, message: "This account signs in with organisation single sign-on, so its password is managed there." });
+    }
+
+    const result = await sendPasswordResetLink(user, { requestedIp: getRequestIp(req), requestedByAdmin: true });
+    if (!result.sent) {
+      const response = { success: false, message: "The reset email could not be sent. Check the email settings and try again." };
+      if (process.env.NODE_ENV === "development") response.localResetUrl = result.resetUrl;
+      return res.status(502).json(response);
+    }
+
+    return res.json({
+      success: true,
+      message: `A password reset link has been emailed to ${user.email}. It works once and expires soon.`,
+    });
+  } catch (error) {
+    console.error("Send staff password reset error:", error);
+    return res.status(500).json({ success: false, message: "Failed to send the password reset link." });
+  }
+}
+
 async function listStaffUsers(req, res) {
   try {
     const users = await prisma.staffUser.findMany({
@@ -657,7 +658,7 @@ async function createStaffUser(req, res) {
       });
     }
 
-    const passwordProblem = getPasswordProblem(password, { email, fullName });
+    const passwordProblem = getNewPasswordProblem(password, req.body.confirmPassword, { email, fullName });
     if (passwordProblem) {
       return res.status(400).json({ success: false, message: passwordProblem });
     }
@@ -741,7 +742,7 @@ async function updateStaffUser(req, res) {
     if (req.body.committeeMemberId !== undefined) data.committeeMemberId = toSafeString(req.body.committeeMemberId) || null;
     if (req.body.password) {
       const password = toSafeString(req.body.password);
-      const passwordProblem = getPasswordProblem(password, { email: data.email, fullName: data.fullName });
+      const passwordProblem = getNewPasswordProblem(password, req.body.confirmPassword, { email: data.email, fullName: data.fullName });
       if (passwordProblem) {
         return res.status(400).json({ success: false, message: passwordProblem });
       }
@@ -815,6 +816,7 @@ module.exports = {
   startSso,
   ssoCallback,
   listStaffUsers,
+  sendStaffUserPasswordReset,
   createStaffUser,
   updateStaffUser,
 };

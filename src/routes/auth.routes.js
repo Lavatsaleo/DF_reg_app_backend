@@ -12,6 +12,7 @@ const {
   listStaffUsers,
   createStaffUser,
   updateStaffUser,
+  sendStaffUserPasswordReset,
 } = require("../controllers/auth.controller");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
 const { rateLimits } = require("../middleware/security.middleware");
@@ -33,5 +34,6 @@ router.get("/sso/callback", rateLimits.loginByAddress, ssoCallback);
 router.get("/users", requireAuth, requireRoles("ADMIN"), listStaffUsers);
 router.post("/users", requireAuth, requireRoles("ADMIN"), createStaffUser);
 router.patch("/users/:userId", requireAuth, requireRoles("ADMIN"), updateStaffUser);
+router.post("/users/:userId/password-reset", rateLimits.adminPasswordReset, requireAuth, requireRoles("ADMIN"), sendStaffUserPasswordReset);
 
 module.exports = router;
