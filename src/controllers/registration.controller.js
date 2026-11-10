@@ -10,6 +10,7 @@ const { COUNTRY_CONTACTS } = require("../data/physicalAcademyConsent");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
+const { issueVerificationCode, verifyCode } = require("../services/verificationCode.service");
 const { assignApplicantToLeastLoadedMember } = require("../services/committeeAssignment.service");
 const { getApplicantCountryFilter, canAccessCountry } = require("../utils/countryAccess");
 const {
@@ -597,23 +598,24 @@ function buildDraftPublicPayload(draft, { includeAnswers = false } = {}) {
   };
 }
 
-function datesMatch(leftValue, rightValue) {
-  if (!leftValue || !rightValue) return false;
-
-  const leftDate = new Date(leftValue);
-  const rightDate = new Date(rightValue);
-
-  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
-    return String(leftValue).slice(0, 10) === String(rightValue).slice(0, 10);
+// Saved numbers include the country dial code (254712345678), but applicants often type the local
+// form (0712345678). Returns every stored form the typed number could match.
+function getContactNumberCandidates(value) {
+  const digits = normalizeContactNumber(value);
+  if (!digits || digits.length < 7) return [];
+  const candidates = new Set([digits]);
+  if (digits.startsWith("0")) {
+    for (const dialCode of Object.values(COUNTRY_DIAL_CODES)) {
+      const dialDigits = String(dialCode || "").replace(/\D/g, "");
+      if (dialDigits) candidates.add(`${dialDigits}${digits.replace(/^0+/, "")}`);
+    }
   }
-
-  return leftDate.toISOString().slice(0, 10) === rightDate.toISOString().slice(0, 10);
+  return [...candidates];
 }
 
 async function findIncompleteDraftByIdentifier(identifier) {
   const cleanIdentifier = String(identifier || "").trim();
   const draftReference = cleanIdentifier.toUpperCase();
-  const normalizedContactNumber = normalizeContactNumber(cleanIdentifier);
 
   if (!cleanIdentifier) return null;
 
@@ -625,10 +627,21 @@ async function findIncompleteDraftByIdentifier(identifier) {
     return draft?.status === "INCOMPLETE" ? draft : null;
   }
 
-  if (normalizedContactNumber && normalizedContactNumber.length >= 7) {
+  if (cleanIdentifier.includes("@")) {
+    const normalizedEmail = normalizeEmail(cleanIdentifier);
+    return normalizedEmail
+      ? prisma.registrationDraft.findFirst({
+          where: { normalizedEmail, status: "INCOMPLETE" },
+          orderBy: { lastSavedAt: "desc" },
+        })
+      : null;
+  }
+
+  const contactNumberCandidates = getContactNumberCandidates(cleanIdentifier);
+  if (contactNumberCandidates.length) {
     return prisma.registrationDraft.findFirst({
       where: {
-        normalizedContactNumber,
+        normalizedContactNumber: { in: contactNumberCandidates },
         status: "INCOMPLETE",
       },
       orderBy: { lastSavedAt: "desc" },
@@ -1075,11 +1088,12 @@ async function saveRegistrationDraft(req, res) {
     const normalizedContactNumber = normalizeContactNumber(contactNumber);
     const normalizedEmail = normalizeEmail(email);
 
-    if (!draftReference && !normalizedContactNumber) {
+    // A saved draft is reopened with a code sent to its email, so it needs both before it is saved to the portal.
+    if (!draftReference && (!normalizedContactNumber || !normalizedEmail)) {
       return res.status(400).json({
         success: false,
         message:
-          "Enter a mobile number before saving to the portal. The form is still saved on this device until then.",
+          "Enter your mobile number and email address before saving to the portal. The form is still saved on this device until then.",
       });
     }
 
@@ -1122,7 +1136,7 @@ async function saveRegistrationDraft(req, res) {
 
         if (draftForNumber) {
           throw Object.assign(
-            new Error("An application is already saved for this mobile number. Use Continue a saved application to open it."),
+            new Error("An application is already saved for this mobile number. Use Check status to get a code by email and continue it."),
             { statusCode: 409 }
           );
         }
@@ -1212,56 +1226,6 @@ async function getRegistrationDraft(req, res) {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch application draft.",
-    });
-  }
-}
-
-async function resumeRegistrationDraft(req, res) {
-  try {
-    const identifier =
-      req.body.draftReference || req.body.contactNumber || req.body.identifier || "";
-    const draft = await findIncompleteDraftByIdentifier(identifier);
-
-    if (!draft) {
-      return res.status(404).json({
-        success: false,
-        message: "No incomplete application draft was found for those details.",
-      });
-    }
-
-    const answers = draft.answers || {};
-    const providedDateOfBirth = req.body.dateOfBirth;
-    const providedEmail = normalizeEmail(req.body.email);
-    const savedDateOfBirth = answers.DATE_OF_BIRTH;
-    const savedEmail = normalizeEmail(answers.EMAIL || draft.email);
-
-    const verifiedByDateOfBirth =
-      savedDateOfBirth && providedDateOfBirth && datesMatch(savedDateOfBirth, providedDateOfBirth);
-    const verifiedByEmail = savedEmail && providedEmail && savedEmail === providedEmail;
-    // Without saved details to check, only the private draft reference itself opens the draft.
-    const canResumeWithoutExtraVerification =
-      !savedDateOfBirth && !savedEmail &&
-      String(identifier).trim().toUpperCase() === draft.draftReference;
-
-    if (!verifiedByDateOfBirth && !verifiedByEmail && !canResumeWithoutExtraVerification) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "We found an incomplete application, but the verification details did not match. Use the date of birth or email address entered in the form.",
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: "Incomplete application draft found.",
-      data: buildDraftPublicPayload(draft, { includeAnswers: true }),
-    });
-  } catch (error) {
-    console.error("Resume registration draft error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to resume application draft.",
     });
   }
 }
@@ -1994,195 +1958,167 @@ function getSupportEmail(country) {
   return COUNTRY_CONTACTS[country]?.questions || null;
 }
 
-async function getRegistrationStatus(req, res) {
-  try {
-    const identifier = String(req.params.reference || "").trim();
-    const applicationReference = identifier.toUpperCase();
-    const normalizedContactNumber = normalizeContactNumber(identifier);
+const ACCESS_CODE_PURPOSE = "APPLICATION_ACCESS";
+const ACCESS_CODE_SENT_MESSAGE =
+  "If we found an application with those details, we have sent a 6-digit code to the email address used in it. The code expires in 10 minutes. Check your spam or junk folder if it does not arrive.";
+const ACCESS_CODE_INVALID_MESSAGE =
+  "That code is not correct or has expired. Check the latest email we sent, or ask for a new code.";
 
+const STATUS_LOOKUP_INCLUDE = {
+  statusHistory: { orderBy: { createdAt: "asc" } },
+  skillsTestAttempts: { where: { status: "SUBMITTED" }, orderBy: { submittedAt: "desc" } },
+  skillsTestInvitations: { orderBy: { createdAt: "desc" } },
+  participantRegistrationInvitations: { orderBy: { createdAt: "desc" }, take: 1 },
+};
+
+// Finds the submitted application, or failing that the saved draft, for a reference, mobile number or email.
+async function findApplicationForLookup(identifier, { include } = {}) {
+  const cleanIdentifier = String(identifier || "").trim();
+  if (!cleanIdentifier) return null;
+
+  const upperIdentifier = cleanIdentifier.toUpperCase();
+  const normalizedEmail = cleanIdentifier.includes("@") ? normalizeEmail(cleanIdentifier) : null;
+  const contactNumberCandidates = normalizedEmail ? [] : getContactNumberCandidates(cleanIdentifier);
+
+  let applicant = await prisma.applicant.findUnique({ where: { applicationReference: upperIdentifier }, include });
+  if (!applicant && normalizedEmail) {
+    applicant = await prisma.applicant.findUnique({ where: { normalizedEmail }, include });
+  }
+  if (!applicant && contactNumberCandidates.length) {
+    applicant = await prisma.applicant.findFirst({
+      where: { normalizedContactNumber: { in: contactNumberCandidates } },
+      orderBy: { createdAt: "desc" },
+      include,
+    });
+  }
+  // Ineligible applications are not tracked on the public status page.
+  if (applicant) return applicant.status === "INELIGIBLE" ? null : { kind: "APPLICANT", applicant };
+
+  const draft = await findIncompleteDraftByIdentifier(cleanIdentifier);
+  return draft ? { kind: "DRAFT", draft } : null;
+}
+
+function buildApplicantStatusPayload(applicant) {
+  const latestRegistrationInvitation = applicant.participantRegistrationInvitations?.[0];
+  const latestAttempt = applicant.skillsTestAttempts[0];
+
+  return {
+    kind: "APPLICATION",
+    applicationReference: applicant.applicationReference,
+    participantCode: applicant.participantCode,
+    status: applicant.status,
+    pathway: applicant.pathway,
+    registrationMode: applicant.registrationMode,
+    isEligible: applicant.isEligible,
+    eligibilityReason: applicant.eligibilityReason,
+    screeningStatus: applicant.screeningStatus,
+    submittedAt: applicant.createdAt,
+    lastUpdatedAt: applicant.updatedAt,
+    requiresBasicSkillsTest:
+      applicant.isEligible &&
+      pathwayRequiresBasicSkillsTest(applicant.pathway) &&
+      applicant.skillsTestAttempts.length === 0,
+    testInvitation: summarizeTestInvitation(applicant.skillsTestInvitations?.[0], { includeEmail: true }),
+    participantRegistrationInvitation: latestRegistrationInvitation
+      ? {
+          status: latestRegistrationInvitation.status,
+          emailTo: maskEmail(latestRegistrationInvitation.emailTo),
+          sentAt: latestRegistrationInvitation.sentAt,
+          expiresAt: latestRegistrationInvitation.expiresAt,
+          openedAt: latestRegistrationInvitation.openedAt,
+          submittedAt: latestRegistrationInvitation.submittedAt,
+          formVersion: latestRegistrationInvitation.formVersion,
+        }
+      : null,
+    skillsTest: latestAttempt
+      ? {
+          submitted: true,
+          score: latestAttempt.score,
+          maxScore: latestAttempt.maxScore,
+          percentage: latestAttempt.percentage,
+          passed: latestAttempt.passed,
+          testVersion: latestAttempt.testVersion,
+          submittedAt: latestAttempt.submittedAt,
+        }
+      : { submitted: false },
+    timeline: applicant.statusHistory.map((item) => ({ status: item.status, note: item.note, date: item.createdAt })),
+    nextStepMessage: getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus),
+    supportEmail: getSupportEmail(applicant.country),
+  };
+}
+
+function buildDraftAccessPayload(draft) {
+  return {
+    kind: "DRAFT",
+    ...buildDraftPublicPayload(draft, { includeAnswers: true }),
+    supportEmail: getSupportEmail(draft.answers?.COUNTRY),
+  };
+}
+
+/*
+  Step 1 of a status check or resume: send a one-time code to the email on the application or draft.
+  The reply is the same whether or not anything was found, so the form can't be used to discover
+  who has applied.
+*/
+async function requestApplicationAccessCode(req, res) {
+  try {
+    const identifier = String(req.body?.identifier || "").trim().slice(0, 200);
     if (!identifier) {
       return res.status(400).json({
         success: false,
-        message: "Application reference or mobile number is required.",
+        message: "Enter your application reference, mobile number or email address.",
       });
     }
 
-    const include = {
-      statusHistory: {
-        orderBy: {
-          createdAt: "asc",
-        },
-      },
-      skillsTestAttempts: {
-        where: {
-          status: "SUBMITTED",
-        },
-        orderBy: {
-          submittedAt: "desc",
-        },
-      },
-      skillsTestInvitations: {
-        orderBy: {
-          createdAt: "desc",
-        },
-      },
-      participantRegistrationInvitations: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
-    };
+    const match = await findApplicationForLookup(identifier);
+    const subject = match?.kind === "APPLICANT" ? match.applicant : match?.draft;
 
-    // Keep the existing application-reference lookup as the first option.
-    let applicant = await prisma.applicant.findUnique({
-      where: {
-        applicationReference,
-      },
-      include,
-    });
-
-    let lookupMethod = "APPLICATION_REFERENCE";
-
-    // If no reference match is found, use the normalized primary mobile number.
-    // The normalized field is unique, so one mobile number can only open one application.
-    if (!applicant && normalizedContactNumber && normalizedContactNumber.length >= 7) {
-      applicant = await prisma.applicant.findUnique({
-        where: {
-          normalizedContactNumber,
-        },
-        include,
+    if (subject?.email) {
+      const result = await issueVerificationCode({
+        purpose: ACCESS_CODE_PURPOSE,
+        subjectType: match.kind,
+        subjectId: subject.id,
+        email: subject.email,
+        phone: subject.contactNumber,
+        purposeText: match.kind === "APPLICANT" ? "see your application status" : "continue your saved application",
       });
-      lookupMethod = "MOBILE_NUMBER";
+      if (!result.issued) console.warn("[application-access] code not issued", { kind: match.kind, reason: result.reason });
     }
 
-    if (!applicant) {
-      const draft = await findIncompleteDraftByIdentifier(identifier);
+    return res.status(202).json({ success: true, message: ACCESS_CODE_SENT_MESSAGE });
+  } catch (error) {
+    console.error("Request application access code error:", error);
+    return res.status(500).json({ success: false, message: "We could not send a code. Please try again." });
+  }
+}
 
-      if (draft) {
-        const byReference = draft.draftReference === applicationReference;
-        const draftPayload = buildDraftPublicPayload(draft, { includeAnswers: false });
-        if (!byReference) delete draftPayload.draftReference;
-        return res.json({
-          success: true,
-          data: {
-            ...draftPayload,
-            limitedView: !byReference,
-            lookupMethod: draft.draftReference === applicationReference
-              ? "DRAFT_REFERENCE"
-              : "MOBILE_NUMBER",
-            dhis2Synced: false,
-            requiresBasicSkillsTest: false,
-            skillsTest: { submitted: false },
-            timeline: [
-              {
-                status: "INCOMPLETE",
-                note: "Application draft saved but not yet submitted.",
-                date: draft.createdAt,
-              },
-              {
-                status: "INCOMPLETE",
-                note: "Latest draft save.",
-                date: draft.lastSavedAt,
-              },
-            ],
-          },
-        });
-      }
+// Step 2: a correct code shows the status, or returns the saved draft so the applicant can continue.
+async function verifyApplicationAccessCode(req, res) {
+  try {
+    const identifier = String(req.body?.identifier || "").trim().slice(0, 200);
+    const code = req.body?.code;
+    if (!identifier || !code) {
+      return res.status(400).json({ success: false, message: "Enter the 6-digit code from the email." });
     }
 
-    if (!applicant || applicant.status === "INELIGIBLE") {
-      return res.status(404).json({
-        success: false,
-        message:
-          "No trackable application was found with that application reference or mobile number.",
-      });
-    }
+    const match = await findApplicationForLookup(identifier, { include: STATUS_LOOKUP_INCLUDE });
+    const subject = match?.kind === "APPLICANT" ? match.applicant : match?.draft;
 
-    const timeline = applicant.statusHistory.map((item) => ({
-      status: item.status,
-      note: item.note,
-      date: item.createdAt,
-    }));
-    const nextStepMessage = getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus);
+    const verified = subject
+      ? await verifyCode({ purpose: ACCESS_CODE_PURPOSE, subjectType: match.kind, subjectId: subject.id, code })
+      : false;
 
-    // Anyone can type a phone number, so that lookup shows progress only, never personal details or scores.
-    if (lookupMethod === "MOBILE_NUMBER") {
-      return res.json({
-        success: true,
-        data: {
-          limitedView: true,
-          status: applicant.status,
-          pathway: applicant.pathway,
-          isEligible: applicant.isEligible,
-          screeningStatus: applicant.screeningStatus,
-          submittedAt: applicant.createdAt,
-          lastUpdatedAt: applicant.updatedAt,
-          requiresBasicSkillsTest:
-            applicant.isEligible &&
-            pathwayRequiresBasicSkillsTest(applicant.pathway) &&
-            applicant.skillsTestAttempts.length === 0,
-          testInvitation: summarizeTestInvitation(applicant.skillsTestInvitations?.[0], { includeEmail: false }),
-          skillsTest: { submitted: applicant.skillsTestAttempts.length > 0 },
-          timeline: timeline.map(({ status, date }) => ({ status, date })),
-          nextStepMessage,
-          supportEmail: getSupportEmail(applicant.country),
-        },
-      });
+    if (!verified) {
+      return res.status(400).json({ success: false, message: ACCESS_CODE_INVALID_MESSAGE });
     }
 
     return res.json({
       success: true,
-      data: {
-        applicationReference: applicant.applicationReference,
-        participantCode: applicant.participantCode,
-        status: applicant.status,
-        pathway: applicant.pathway,
-        registrationMode: applicant.registrationMode,
-        isEligible: applicant.isEligible,
-        eligibilityReason: applicant.eligibilityReason,
-        screeningStatus: applicant.screeningStatus,
-        submittedAt: applicant.createdAt,
-        lastUpdatedAt: applicant.updatedAt,
-        lookupMethod,
-        requiresBasicSkillsTest:
-          applicant.isEligible &&
-          pathwayRequiresBasicSkillsTest(applicant.pathway) &&
-          applicant.skillsTestAttempts.length === 0,
-        testInvitation: summarizeTestInvitation(applicant.skillsTestInvitations?.[0], { includeEmail: true }),
-        participantRegistrationInvitation:
-          applicant.participantRegistrationInvitations?.[0]
-            ? {
-                status: applicant.participantRegistrationInvitations[0].status,
-                emailTo: maskEmail(applicant.participantRegistrationInvitations[0].emailTo),
-                sentAt: applicant.participantRegistrationInvitations[0].sentAt,
-                expiresAt: applicant.participantRegistrationInvitations[0].expiresAt,
-                openedAt: applicant.participantRegistrationInvitations[0].openedAt,
-                submittedAt: applicant.participantRegistrationInvitations[0].submittedAt,
-                formVersion: applicant.participantRegistrationInvitations[0].formVersion,
-              }
-            : null,
-        skillsTest: applicant.skillsTestAttempts[0]
-          ? {
-              submitted: true,
-              score: applicant.skillsTestAttempts[0].score,
-              maxScore: applicant.skillsTestAttempts[0].maxScore,
-              percentage: applicant.skillsTestAttempts[0].percentage,
-              passed: applicant.skillsTestAttempts[0].passed,
-              testVersion: applicant.skillsTestAttempts[0].testVersion,
-              submittedAt: applicant.skillsTestAttempts[0].submittedAt,
-            }
-          : { submitted: false },
-        timeline,
-        nextStepMessage,
-        supportEmail: getSupportEmail(applicant.country),
-      },
+      data: match.kind === "APPLICANT" ? buildApplicantStatusPayload(match.applicant) : buildDraftAccessPayload(match.draft),
     });
   } catch (error) {
-    console.error("Get registration status error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to check application status.",
-    });
+    console.error("Verify application access code error:", error);
+    return res.status(500).json({ success: false, message: "We could not check the code. Please try again." });
   }
 }
 
@@ -2191,9 +2127,9 @@ module.exports = {
   submitRegistration,
   getApplicants,
   getApplicantById,
-  getRegistrationStatus,
+  requestApplicationAccessCode,
+  verifyApplicationAccessCode,
   getRegistrationFormQuestions,
   saveRegistrationDraft,
   getRegistrationDraft,
-  resumeRegistrationDraft,
 };

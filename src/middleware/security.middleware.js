@@ -92,11 +92,18 @@ const rateLimits = {
     max: 30,
     message: "Too many lookups. Please wait 15 minutes and try again.",
   }),
-  draftResume: createRateLimiter({
-    name: "draft-resume",
+  // Each request emails a code, so keep this low; codes themselves lock after 5 wrong guesses.
+  verificationCodeRequest: createRateLimiter({
+    name: "verification-code-request",
     windowMs: 15 * MINUTE,
     max: 10,
-    message: "Too many attempts to open a saved application. Please wait 15 minutes and try again.",
+    message: "Too many code requests. Please wait 15 minutes and try again.",
+  }),
+  verificationCodeVerify: createRateLimiter({
+    name: "verification-code-verify",
+    windowMs: 15 * MINUTE,
+    max: 30,
+    message: "Too many attempts. Please wait 15 minutes and try again.",
   }),
   draftSave: createRateLimiter({ name: "draft-save", windowMs: 15 * MINUTE, max: 300 }),
   applicationSubmit: createRateLimiter({ name: "application-submit", windowMs: 60 * MINUTE, max: 10 }),

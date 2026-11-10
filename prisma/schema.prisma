@@ -813,3 +813,21 @@ model ConsentSupportRequest {
 
   @@index([status, createdAt])
 }
+
+// One-time codes that prove an applicant owns the email on an application or saved draft
+// before its status or answers are shown. Only a hash of the code is stored.
+model VerificationCode {
+  id          String    @id @default(uuid())
+  purpose     String
+  subjectType String
+  subjectId   String
+  codeHash    String
+  channels    String    @default("EMAIL")
+  attempts    Int       @default(0)
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([purpose, subjectType, subjectId, createdAt])
+  @@index([expiresAt])
+}

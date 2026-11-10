@@ -8,11 +8,11 @@ const {
   submitRegistration,
   getApplicants,
   getApplicantById,
-  getRegistrationStatus,
   getRegistrationFormQuestions,
   saveRegistrationDraft,
   getRegistrationDraft,
-  resumeRegistrationDraft,
+  requestApplicationAccessCode,
+  verifyApplicationAccessCode,
 } = require("../controllers/registration.controller");
 
 const router = express.Router();
@@ -20,7 +20,6 @@ const router = express.Router();
 router.get("/form/questions", getRegistrationFormQuestions);
 
 router.post("/drafts", rateLimits.draftSave, saveRegistrationDraft);
-router.post("/drafts/resume", rateLimits.draftResume, resumeRegistrationDraft);
 router.get("/drafts/:draftReference", rateLimits.publicLookup, getRegistrationDraft);
 
 router.post(
@@ -34,8 +33,10 @@ router.post(
 // Full applicant records: super admins only. Committee screens use the blind-review endpoints instead.
 router.get("/", requireAuth, requireRoles("ADMIN"), getApplicants);
 
+// Status checks and resuming a saved draft: a one-time code goes to the email on the application first.
 // Must come before /:id so Express does not treat "status" as an applicant id.
-router.get("/status/:reference", rateLimits.publicLookup, getRegistrationStatus);
+router.post("/status/request-code", rateLimits.verificationCodeRequest, requestApplicationAccessCode);
+router.post("/status/verify", rateLimits.verificationCodeVerify, verifyApplicationAccessCode);
 
 router.get("/:id", requireAuth, requireRoles("ADMIN"), getApplicantById);
 

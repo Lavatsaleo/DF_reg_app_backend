@@ -4,7 +4,8 @@
   Removed: applicants and everything linked to them (answers, documents, status history,
   skills-test invitations/attempts/answers, participant-registration invitations,
   committee assignments/reviews/history, DHIS2 sync logs), saved drafts and consent
-  support requests.
+  support requests
+  and status-check / resume verification codes.
 
   Kept: staff users, committee members, the skills-test question bank, ID counters
   and all settings.
@@ -38,7 +39,7 @@ async function counts(prisma) {
   const [
     applicants, responses, documents, statusHistory, testInvitations, testAttempts,
     registrationInvitations, committeeAssignments, committeeReviews, assignmentHistory,
-    dhis2Logs, drafts, consentSupportRequests, sentToDhis2,
+    dhis2Logs, drafts, consentSupportRequests, verificationCodes, sentToDhis2,
   ] = await Promise.all([
     prisma.applicant.count(),
     prisma.registrationResponse.count(),
@@ -53,12 +54,13 @@ async function counts(prisma) {
     prisma.dhis2SyncLog.count(),
     prisma.registrationDraft.count(),
     prisma.consentSupportRequest.count(),
+    prisma.verificationCode.count(),
     prisma.applicant.count({ where: { dhis2TrackedEntityId: { not: null } } }),
   ]);
   return {
     applicants, responses, documents, statusHistory, testInvitations, testAttempts,
     registrationInvitations, committeeAssignments, committeeReviews, assignmentHistory,
-    dhis2Logs, drafts, consentSupportRequests, sentToDhis2,
+    dhis2Logs, drafts, consentSupportRequests, verificationCodes, sentToDhis2,
   };
 }
 
@@ -129,6 +131,7 @@ async function removeStoredFiles(prisma) {
       await tx.applicant.deleteMany();
       await tx.registrationDraft.deleteMany();
       await tx.consentSupportRequest.deleteMany();
+      await tx.verificationCode.deleteMany();
       if (resetCounters) await tx.sequenceCounter.deleteMany();
     }, { timeout: 120000 });
 
