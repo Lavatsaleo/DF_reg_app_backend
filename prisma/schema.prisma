@@ -140,8 +140,32 @@ model Applicant {
     Normalized fields are used to prevent duplicate applications even when
     applicants type spaces, mixed case emails, or formatted phone numbers.
   */
-  normalizedEmail         String? @unique
-  normalizedContactNumber String? @unique
+  normalizedEmail         String?
+  normalizedContactNumber String?
+  /*
+    Country + ID number with spaces and punctuation removed, e.g. "KENYA:12345678".
+  */
+  normalizedNationalId    String?
+
+  /*
+    One live application per person. These copy the normalised email, phone and national ID
+    while the application is active, and are cleared when the person is found not eligible or
+    not selected, so the database refuses a second active application but allows a new one
+    after a rejection.
+  */
+  activeEmailKey      String? @unique
+  activePhoneKey      String? @unique
+  activeNationalIdKey String? @unique
+
+  /*
+    Why an application ended (not eligible or not selected), in the words sent to the applicant,
+    and whether that email reached them.
+  */
+  rejectionReasonCode  String?
+  rejectionReason      String?   @db.Text
+  rejectionEmailStatus String?
+  rejectionEmailSentAt DateTime?
+  rejectionEmailError  String?   @db.Text
 
   /*
     Location / selection criteria
@@ -266,6 +290,9 @@ model Applicant {
   committeeAssignmentHistory CommitteeAssignmentHistory[]
 
   @@index([status])
+  @@index([normalizedEmail])
+  @@index([normalizedContactNumber])
+  @@index([normalizedNationalId])
   @@index([country])
   @@index([county])
   @@index([subCounty])
@@ -668,6 +695,12 @@ model CommitteeReview {
 
   decision String
   comments String? @db.Text
+  /*
+    For "not selected": the reason chosen from the list, and the message emailed to the applicant.
+    comments stay internal to the committee.
+  */
+  notSelectedReasonCode String?
+  applicantMessage      String? @db.Text
   reviewedAt DateTime @default(now())
 
   createdAt DateTime @default(now())

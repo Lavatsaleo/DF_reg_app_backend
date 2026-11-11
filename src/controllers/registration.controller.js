@@ -7,6 +7,14 @@ const {
 } = registrationFormQuestions;
 const { getEligibilityRules } = require("../data/pathwayEligibility");
 const { COUNTRY_CONTACTS } = require("../data/physicalAcademyConsent");
+const {
+  normalizeNationalId,
+  buildActiveIdentityKeys,
+  findActiveApplication,
+  describeMatch,
+  isActiveIdentityConflict,
+} = require("../utils/applicationIdentity");
+const { sendApplicationOutcome } = require("../services/applicationOutcome.service");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -469,40 +477,33 @@ function validateRequiredQuestions(responses = [], questions = registrationFormQ
   return missingQuestions;
 }
 
-async function findDuplicateApplication({ normalizedEmail, normalizedContactNumber }) {
-  const duplicateConditions = [];
+const PATHWAY_NAMES = {
+  PHYSICAL_ACADEMY: "Physical Academy",
+  VIRTUAL_ACADEMY: "Virtual Academy",
+  DIGITAL_ENTREPRENEURSHIP: "Digital Entrepreneurship",
+};
 
-  if (normalizedEmail) {
-    duplicateConditions.push({ normalizedEmail });
-  }
-
-  if (normalizedContactNumber) {
-    duplicateConditions.push({ normalizedContactNumber });
-  }
-
-  if (duplicateConditions.length === 0) return null;
-
-  return prisma.applicant.findFirst({
-    where: {
-      OR: duplicateConditions,
-    },
-    select: {
-      id: true,
-      applicationReference: true,
-      participantCode: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      contactNumber: true,
-      status: true,
-      pathway: true,
-      registrationMode: true,
-      screeningStatus: true,
-      country: true,
-      createdAt: true,
-    },
-  });
+// Shown when a person already has a live application: one pathway at a time until it ends.
+function buildActiveApplicationMessage(matchedOn, pathway) {
+  const which = pathway ? ` for the ${PATHWAY_NAMES[pathway] || "Digital Futures programme"}` : "";
+  return `There is already an active application${which} with this ${matchedOn}. You can apply for one pathway at a time. If that application is not successful, you can apply again. Use Check status to follow it.`;
 }
+
+const ACTIVE_APPLICATION_SELECT = {
+  id: true,
+  applicationReference: true,
+  participantCode: true,
+  status: true,
+  pathway: true,
+  registrationMode: true,
+  screeningStatus: true,
+  country: true,
+  createdAt: true,
+  activeEmailKey: true,
+  activePhoneKey: true,
+  activeNationalIdKey: true,
+};
+
 
 function sanitizeDraftAnswers(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1097,20 +1098,20 @@ async function saveRegistrationDraft(req, res) {
       });
     }
 
-    if (normalizedContactNumber) {
-      const existingApplicant = await prisma.applicant.findUnique({
-        where: { normalizedContactNumber },
-        select: { applicationReference: true, status: true },
+    // Checked as soon as the contact details are entered, before the rest of the form is filled in.
+    const draftIdentity = {
+      normalizedEmail,
+      normalizedContactNumber,
+      normalizedNationalId: normalizeNationalId(country, answers.NATIONAL_ID_NUMBER),
+    };
+    const activeApplication = await findActiveApplication(prisma, draftIdentity, ACTIVE_APPLICATION_SELECT);
+    if (activeApplication) {
+      return res.status(409).json({
+        success: false,
+        reasonCode: "APPLICATION_EXISTS",
+        // The pathway is not named here: anyone can type a number into a draft.
+        message: buildActiveApplicationMessage(describeMatch(activeApplication, draftIdentity)),
       });
-
-      if (existingApplicant) {
-        return res.status(409).json({
-          success: false,
-          reasonCode: "APPLICATION_EXISTS",
-          message:
-            "An application has already been submitted with this mobile number. You can apply for one pathway only. Use Check status to follow your application.",
-        });
-      }
     }
 
     const completionPercent = calculateDraftCompletionPercent(answers, pathway);
@@ -1303,10 +1304,14 @@ async function submitRegistration(req, res) {
     const normalizedContactNumber = normalizeContactNumber(contactNumber);
     const normalizedEmail = normalizeEmail(email);
 
-    const existingApplicant = await findDuplicateApplication({
-      normalizedEmail,
-      normalizedContactNumber,
-    });
+    const normalizedNationalId = normalizeNationalId(
+      getAnswerValue(parsedResponses, "COUNTRY"),
+      getAnswerValue(parsedResponses, "NATIONAL_ID_NUMBER")
+    );
+    const submissionIdentity = { normalizedEmail, normalizedContactNumber, normalizedNationalId };
+
+    // One live application per person (matched on mobile number, email or ID number).
+    const existingApplicant = await findActiveApplication(prisma, submissionIdentity, ACTIVE_APPLICATION_SELECT);
 
     if (existingApplicant) {
       const canTrackExistingApplication = existingApplicant.status !== "INELIGIBLE";
@@ -1315,7 +1320,8 @@ async function submitRegistration(req, res) {
         success: false,
         duplicate: true,
         existingApplicationOpened: true,
-        message: "This application already exists.",
+        reasonCode: "ACTIVE_APPLICATION_EXISTS",
+        message: buildActiveApplicationMessage(describeMatch(existingApplicant, submissionIdentity), existingApplicant.pathway),
         hideApplicationReference: !canTrackExistingApplication,
         allowStatusCheck: canTrackExistingApplication,
         applicationReference: canTrackExistingApplication
@@ -1387,6 +1393,8 @@ async function submitRegistration(req, res) {
           email,
           normalizedContactNumber,
           normalizedEmail,
+          normalizedNationalId,
+          ...buildActiveIdentityKeys(submissionIdentity, finalStatus),
           alternativeContactNumber: getAnswerValue(
             parsedResponses,
             "ALTERNATIVE_CONTACT_NUMBER"
@@ -1618,6 +1626,16 @@ async function submitRegistration(req, res) {
       );
     }
 
+    if (applicant.status === "INELIGIBLE") {
+      await sendApplicationOutcome(applicant, {
+        kind: "NOT_ELIGIBLE",
+        reasonCode: "NOT_ELIGIBLE",
+        reasons: eligibilityResult.publicFeedback.length
+          ? eligibilityResult.publicFeedback
+          : ["Your application does not meet one or more of the requirements for this pathway."],
+      });
+    }
+
     const uploadedDocuments = [];
 
     if (req.files && req.files.length > 0) {
@@ -1653,9 +1671,7 @@ async function submitRegistration(req, res) {
     const publicParticipantCode = canTrackApplication
       ? applicant.participantCode
       : null;
-    const eligibilityFeedbackMessages = buildPublicEligibilityFeedback(
-      applicant.eligibilityReasonCodes || []
-    );
+    const eligibilityFeedbackMessages = eligibilityResult.publicFeedback;
     const applicantEligibilityMessage = buildApplicantEligibilityMessage(
       applicant.screeningStatus,
       eligibilityFeedbackMessages
@@ -1760,7 +1776,8 @@ async function submitRegistration(req, res) {
         existingApplicationOpened: false,
         hideApplicationReference: true,
         allowStatusCheck: false,
-        message: "This application already exists.",
+        reasonCode: isActiveIdentityConflict(error) ? "ACTIVE_APPLICATION_EXISTS" : "APPLICATION_EXISTS",
+        message: buildActiveApplicationMessage("mobile number, email address or ID number"),
       });
     }
 
@@ -1926,7 +1943,7 @@ function getNextStepMessage(status, pathway, screeningStatus) {
     PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION:
       "Your Participant Registration & Baseline Survey has been submitted and is pending verification by the programme team.",
     REJECTED_BY_REVIEW_COMMITTEE:
-      "Your application was reviewed but was not approved for enrollment.",
+      "The selection committee reviewed your application and was not able to offer you a place in this intake. We have emailed you the reason. You are welcome to apply again in a future intake, or for another pathway whose requirements you meet.",
     ENROLLED_IN_DHIS2_PROGRAM:
       "You have been enrolled into the programme pathway.",
     SYNC_FAILED:
@@ -1981,12 +1998,17 @@ async function findApplicationForLookup(identifier, { include } = {}) {
   const contactNumberCandidates = normalizedEmail ? [] : getContactNumberCandidates(cleanIdentifier);
 
   let applicant = await prisma.applicant.findUnique({ where: { applicationReference: upperIdentifier }, include });
+  // Someone may have applied again after a rejection: show the newest application that can be tracked.
   if (!applicant && normalizedEmail) {
-    applicant = await prisma.applicant.findUnique({ where: { normalizedEmail }, include });
+    applicant = await prisma.applicant.findFirst({
+      where: { normalizedEmail, status: { not: "INELIGIBLE" } },
+      orderBy: { createdAt: "desc" },
+      include,
+    });
   }
   if (!applicant && contactNumberCandidates.length) {
     applicant = await prisma.applicant.findFirst({
-      where: { normalizedContactNumber: { in: contactNumberCandidates } },
+      where: { normalizedContactNumber: { in: contactNumberCandidates }, status: { not: "INELIGIBLE" } },
       orderBy: { createdAt: "desc" },
       include,
     });
@@ -2012,6 +2034,8 @@ function buildApplicantStatusPayload(applicant) {
     isEligible: applicant.isEligible,
     eligibilityReason: applicant.eligibilityReason,
     screeningStatus: applicant.screeningStatus,
+    // The committee's reason, as emailed to the applicant, when they were not selected.
+    outcomeReason: applicant.status === "REJECTED_BY_REVIEW_COMMITTEE" ? applicant.rejectionReason || null : null,
     submittedAt: applicant.createdAt,
     lastUpdatedAt: applicant.updatedAt,
     requiresBasicSkillsTest:

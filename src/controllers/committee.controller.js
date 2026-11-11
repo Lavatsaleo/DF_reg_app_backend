@@ -1,5 +1,11 @@
 const prisma = require("../config/prisma");
 const { isIdentifyingQuestionCode, redactNarrative } = require("../utils/identityProtection");
+const { RELEASE_ACTIVE_IDENTITY } = require("../utils/applicationIdentity");
+const {
+  NOT_SELECTED_REASONS,
+  validateNotSelectedReason,
+  sendApplicationOutcome,
+} = require("../services/applicationOutcome.service");
 const {
   READY_FOR_COMMITTEE_STATUS,
   PENDING_ASSIGNMENT_STATUSES,
@@ -1349,6 +1355,14 @@ async function startReview(req, res) {
   }
 }
 
+// The reasons a committee can give when an applicant is not selected (shown in the decision form).
+function listNotSelectedReasons(req, res) {
+  return res.json({
+    success: true,
+    reasons: NOT_SELECTED_REASONS.map(({ code, label, text }) => ({ code, label, text })),
+  });
+}
+
 async function submitCommitteeReview(req, res) {
   try {
     const assignmentId = req.params.assignmentId;
@@ -1360,6 +1374,15 @@ async function submitCommitteeReview(req, res) {
         success: false,
         message: "Please select a valid committee decision.",
       });
+    }
+
+    // "Not selected" needs a reason for the applicant; it is emailed to them.
+    let notSelected = null;
+    if (decision === "NOT_SELECTED") {
+      notSelected = validateNotSelectedReason(req.body.notSelectedReason, req.body.applicantMessage);
+      if (notSelected.error) {
+        return res.status(400).json({ success: false, message: notSelected.error });
+      }
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -1411,6 +1434,8 @@ async function submitCommitteeReview(req, res) {
           committeeMemberId: assignment.committeeMemberId,
           decision,
           comments,
+          notSelectedReasonCode: notSelected?.reasonCode || null,
+          applicantMessage: notSelected?.applicantMessage || null,
         },
       });
 
@@ -1430,6 +1455,8 @@ async function submitCommitteeReview(req, res) {
           reviewComments: comments,
           reviewedAt: new Date(),
           reviewedBy: assignment.committeeMemberId,
+          // Not selected ends the application, so the person may apply again.
+          ...(decision === "NOT_SELECTED" ? RELEASE_ACTIVE_IDENTITY : {}),
         },
       });
 
@@ -1468,6 +1495,15 @@ async function submitCommitteeReview(req, res) {
     });
 
     let participantRegistrationEmailResult = null;
+    let outcomeEmailResult = null;
+
+    if (decision === "NOT_SELECTED") {
+      outcomeEmailResult = await sendApplicationOutcome(result.applicant, {
+        kind: "NOT_SELECTED",
+        reasonCode: notSelected.reasonCode,
+        reasons: notSelected.reasonText,
+      });
+    }
 
     if (result.participantRegistrationInvitationData?.invitation) {
       try {
@@ -1519,7 +1555,11 @@ async function submitCommitteeReview(req, res) {
               pathwaySupportsParticipantRegistration(result.applicant.pathway) &&
               !result.applicant.email
             ? "Committee decision saved. No email address is available for this selected participant. Please contact an administrator to correct their application email before an invitation can be sent."
-            : "Committee review decision saved successfully.",
+            : decision === "NOT_SELECTED"
+              ? outcomeEmailResult?.sent
+                ? "Decision saved. The applicant has been emailed the reason they were not selected."
+                : "Decision saved, but the email with the reason could not be sent. An administrator can resend it from the participant's profile."
+              : "Committee review decision saved successfully.",
       review: result.review,
       participantRegistrationInvitation:
         result.participantRegistrationInvitationData?.invitation
@@ -1620,6 +1660,7 @@ async function listSelectedParticipantsReport(req, res) {
 }
 
 module.exports = {
+  listNotSelectedReasons,
   listCommitteeMembers,
   createCommitteeMember,
   createCommitteeMemberLogin,

@@ -24,6 +24,9 @@ const {
   redactNarrative,
 } = require("../utils/identityProtection");
 
+const { isApplicationEnded } = require("../utils/applicationIdentity");
+const { getNotSelectedReason, resendApplicationOutcome } = require("../services/applicationOutcome.service");
+
 const IDENTITY_HIDDEN_MESSAGE =
   "Name, contact details, identity numbers and documents stay hidden until the selection committee selects this person.";
 
@@ -408,6 +411,19 @@ async function getParticipantProfile(req, res) {
         consentedAt: applicant.consentedAt,
       },
       journey: buildJourney(applicant),
+      // Why the application ended, as emailed to the applicant, and whether the email arrived.
+      outcome: isApplicationEnded(applicant.status)
+        ? {
+            kind: applicant.status === "INELIGIBLE" ? "NOT_ELIGIBLE" : "NOT_SELECTED",
+            reasonCode: applicant.rejectionReasonCode,
+            reasonLabel: getNotSelectedReason(applicant.rejectionReasonCode)?.label || null,
+            reason: scrub(applicant.rejectionReason),
+            emailStatus: applicant.rejectionEmailStatus,
+            emailSentAt: applicant.rejectionEmailSentAt,
+            emailError: applicant.rejectionEmailError,
+            canResend: Boolean(applicant.rejectionReason && applicant.email),
+          }
+        : null,
       eligibility: {
         isEligible: applicant.isEligible,
         screeningStatus: applicant.screeningStatus,
@@ -446,6 +462,8 @@ async function getParticipantProfile(req, res) {
           id: review.id,
           decision: review.decision,
           comments: scrub(review.comments),
+          notSelectedReason: getNotSelectedReason(review.notSelectedReasonCode)?.label || null,
+          applicantMessage: scrub(review.applicantMessage),
           reviewedAt: review.reviewedAt,
           memberName: review.committeeMember?.fullName || null,
         })),
@@ -511,8 +529,32 @@ async function downloadParticipantDocument(req, res) {
   }
 }
 
+// Sends the stored rejection reason to the applicant again (e.g. after an email failure).
+async function resendOutcomeEmail(req, res) {
+  try {
+    const applicant = await loadAccessibleApplicant(req, {});
+    if (!isApplicationEnded(applicant.status) || !applicant.rejectionReason) {
+      return res.status(400).json({ success: false, message: "There is no rejection reason to send for this application." });
+    }
+    if (!applicant.email) {
+      return res.status(400).json({ success: false, message: "This application has no email address." });
+    }
+    const result = await resendApplicationOutcome(applicant);
+    console.info(`[participants] outcome email resent applicant=${applicant.id} by=${req.user.id} status=${result.status}`);
+    if (!result.sent) {
+      return res.status(502).json({ success: false, message: "The email could not be sent. Check the email settings and try again.", status: result.status });
+    }
+    return res.json({ success: true, message: "The reason has been emailed to the applicant again.", sentAt: new Date() });
+  } catch (error) {
+    if (error instanceof RequestError) return res.status(error.status).json({ success: false, message: error.message });
+    console.error("Resend outcome email failed:", error);
+    return res.status(500).json({ success: false, message: "We could not resend the email. Please try again." });
+  }
+}
+
 module.exports = {
   STAGES,
+  resendOutcomeEmail,
   listParticipants,
   getParticipantProfile,
   downloadParticipantDocument,

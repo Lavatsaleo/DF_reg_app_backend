@@ -14,6 +14,7 @@ const {
   reassignApplicant,
   startReview,
   submitCommitteeReview,
+  listNotSelectedReasons,
   listSelectedParticipantsReport,
 } = require("../controllers/committee.controller");
 const { requireAuth, requireRoles } = require("../middleware/auth.middleware");
@@ -30,6 +31,7 @@ router.patch("/members/:memberId", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMI
 router.post("/members/:memberId/login", requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), createCommitteeMemberLogin);
 router.post("/members/:memberId/password-reset", rateLimits.adminPasswordReset, requireRoles("ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON"), sendCommitteeMemberPasswordReset);
 
+router.get("/not-selected-reasons", listNotSelectedReasons);
 router.get("/assignments", listCommitteeAssignments);
 router.get("/assignments/:assignmentId/application", getBlindReviewApplication);
 router.get("/selected-report", requireRoles("ADMIN", "COMMITTEE_CHAIRPERSON"), listSelectedParticipantsReport);
