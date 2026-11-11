@@ -113,6 +113,13 @@ const rateLimits = {
   // Private invitation links: generous enough for autosave, low enough to stop token guessing at scale.
   invitation: createRateLimiter({ name: "invitation", windowMs: 15 * MINUTE, max: 600 }),
   upload: createRateLimiter({ name: "upload", windowMs: 60 * MINUTE, max: 40 }),
+  // Read-only data API (R / RStudio): each page is up to 5,000 rows, so this allows large pulls.
+  dataApi: createRateLimiter({
+    name: "data-api",
+    windowMs: 15 * MINUTE,
+    max: 300,
+    message: "Too many data requests. Please wait 15 minutes and try again.",
+  }),
 };
 
 // Invitation and reset links carry secrets in the path; never write them to the logs.

@@ -60,6 +60,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/committee", committeeRoutes);
 app.use("/api/consents", consentRoutes);
 app.use("/api/participant-registration", participantRegistrationRoutes);
+// Read-only data API for R / RStudio (API keys) and the admin screens that manage those keys.
+app.use("/api/data", require("./routes/dataApi.routes"));
 
 app.use(notFound);
 app.use(errorHandler);

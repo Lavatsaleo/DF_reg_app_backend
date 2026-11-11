@@ -831,3 +831,29 @@ model VerificationCode {
   @@index([purpose, subjectType, subjectId, createdAt])
   @@index([expiresAt])
 }
+
+/*
+  Read-only API keys for analysts pulling data into R or other tools.
+  Only a SHA-256 hash of the key is stored; the key itself is shown once when created.
+  country = null means all countries. includePersonalData adds names, contacts and free text.
+*/
+model ApiAccessKey {
+  id                  String    @id @default(uuid())
+  name                String
+  keyPrefix           String
+  keyHash             String    @unique
+  country             String?
+  includePersonalData Boolean   @default(false)
+  createdByUserId     String?
+  createdByName       String?
+  expiresAt           DateTime
+  lastUsedAt          DateTime?
+  lastUsedIp          String?
+  revokedAt           DateTime?
+  revokedByName       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([revokedAt])
+  @@index([expiresAt])
+}
