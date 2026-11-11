@@ -62,6 +62,8 @@ app.use("/api/consents", consentRoutes);
 app.use("/api/participant-registration", participantRegistrationRoutes);
 // Read-only data API for R / RStudio (API keys) and the admin screens that manage those keys.
 app.use("/api/data", require("./routes/dataApi.routes"));
+// Participant directory and profiles (super admins and country admins).
+app.use("/api/participants", require("./routes/participants.routes"));
 
 app.use(notFound);
 app.use(errorHandler);
