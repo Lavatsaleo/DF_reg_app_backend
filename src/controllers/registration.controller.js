@@ -2132,4 +2132,6 @@ module.exports = {
   getRegistrationFormQuestions,
   saveRegistrationDraft,
   getRegistrationDraft,
+  // Exported for the eligibility tests.
+  calculateEligibility,
 };

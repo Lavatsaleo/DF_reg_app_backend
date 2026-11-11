@@ -1,4 +1,5 @@
 const prisma = require("../config/prisma");
+const { isIdentifyingQuestionCode, redactNarrative } = require("../utils/identityProtection");
 const {
   READY_FOR_COMMITTEE_STATUS,
   PENDING_ASSIGNMENT_STATUSES,
@@ -932,41 +933,8 @@ async function getCommitteeOverview(req, res) {
 
 // The selection committee receives the complete non-identifying application answers.
 // Names, contacts, identity documents and signatures belong only in verification.
-const BLIND_REVIEW_HIDDEN_CODES = new Set([
-  "FIRST_NAME", "MIDDLE_NAME", "LAST_NAME", "OTHER_NAMES",
-  "DATE_OF_BIRTH", "YEAR_OF_BIRTH",
-  "EMAIL", "CONTACT_NUMBER", "ALTERNATIVE_CONTACT_NUMBER",
-  "PHONE_NUMBER", "MOBILE_NUMBER", "WHATSAPP_NUMBER",
-  "NATIONAL_ID_NUMBER", "NATIONAL_ID_CARD_NUMBER",
-  "NATIONAL_ID_TYPE", "PASSPORT_NUMBER",
-  "NEXT_OF_KIN_NAME", "NEXT_OF_KIN_PHONE", "NEXT_OF_KIN_RELATIONSHIP",
-  "ADDRESS", "STREET_ADDRESS", "TOWN", "WARD", "SUB_COUNTY",
-  "COUNTY", "STATE", "REGION", "DISTRICT",
-  "REGISTRATION_CONSENT", "CONSENT_SIGNATURE", "CONSENT_SIGNATURE_DATA",
-  "ASSISTANT_NAME", "ASSISTANT_SIGNATURE", "ASSISTANT_SIGNATURE_DATA",
-  "APPLICATION_FORM_VERSION",
-]);
-
-function redactReviewNarrative(value, applicant) {
-  let text = String(value ?? "");
-  const identifiers = [
-    applicant.firstName,
-    applicant.lastName,
-    applicant.email,
-    applicant.contactNumber,
-    applicant.alternativeContactNumber,
-  ].filter((value) => String(value || "").trim().length >= 3);
-
-  for (const identifier of identifiers) {
-    const escaped = String(identifier).replace(/[|\\{}()[\]^$+*?.]/g, "\\$&");
-    text = text.replace(new RegExp(escaped, "gi"), "[redacted]");
-  }
-
-  return text
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email redacted]")
-    .replace(/(?:https?:\/\/|www\.)[^\s]+/gi, "[link redacted]")
-    .replace(/(?:\+?\d[\d\s()\/-]{7,}\d)/g, "[number redacted]");
-}
+// The rules are shared with the Participants pages (src/utils/identityProtection.js).
+const redactReviewNarrative = redactNarrative;
 
 function getBlindReviewResponseValue(response, applicant) {
   let value = response.valueJson;
@@ -1022,11 +990,7 @@ async function getBlindReviewApplication(req, res) {
 
     const allAnswers = responses
       .filter((response) => {
-        const code = String(response.questionCode || "").toUpperCase();
-        if (BLIND_REVIEW_HIDDEN_CODES.has(code)) return false;
-        if (code.startsWith("PR_") || code.startsWith("CONSENT_")) return false;
-        if (/NAME|SIGNATURE|PASSPORT|NATIONAL_ID|PHONE|EMAIL|CONTACT_NUMBER|ADDRESS|IP_ADDRESS|DOCUMENT_NUMBER/.test(code)) return false;
-        return true;
+        return !isIdentifyingQuestionCode(response.questionCode);
       })
       .map((response) => ({
         questionCode: response.questionCode,
