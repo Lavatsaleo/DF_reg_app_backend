@@ -131,7 +131,8 @@ const NATIONAL_ID_OPTION_BY_COUNTRY = {
   Ghana: "Ghana Card",
   Nigeria: "National Identification Number (NIN)",
 };
-const OTHER_ID_OPTIONS = ["Voter’s ID Card", "NHIS Card", "Driver’s Licence", "Passport"];
+// The NHIS card is not accepted as identification (Nigeria review, November 2026).
+const OTHER_ID_OPTIONS = ["Voter’s ID Card", "Driver’s Licence", "Passport"];
 const ID_TYPE_OPTIONS = [...Object.values(NATIONAL_ID_OPTION_BY_COUNTRY), ...OTHER_ID_OPTIONS];
 
 function setupQuestions(pathway) {
@@ -322,7 +323,7 @@ function identityQuestions({
       section,
       responseType: "SINGLE_SELECT",
       required: true,
-      options: ["Female", "Male"],
+      options: ["Female", "Male", "Prefer not to say"],
     },
     {
       questionNumber: dobNumber,
@@ -559,6 +560,19 @@ function priorEngagementQuestions({ participatedNumber, trainingNumber, otherNum
   ];
 }
 
+const OPD_OPTION = "Organisation of Persons with Disabilities (OPD)";
+const HEARD_ABOUT_OPTIONS = [
+  "Television",
+  "Radio",
+  "Social Media",
+  "Friends / Relatives",
+  OPD_OPTION,
+  "Flyer/Poster/Banner",
+  "Other",
+];
+// Nigeria's OPD mobilisation partners.
+const NIGERIA_OPD_PARTNERS = ["Inclusive Friends Association (IFA)", "FAECARE", "Others"];
+
 const PHYSICAL_SECTION_1 = "Section 1: Training pathway selection";
 const PERSONAL_SECTION = "Section 2: Personal & contact details";
 const EDUCATION_SECTION = "Section 3: Education";
@@ -586,6 +600,82 @@ const ACADEMY_AVAILABILITY = {
   },
 };
 
+// Device, internet and electricity questions. The Virtual Academy and Digital Entrepreneurship (largely
+// online in Nigeria) both ask them; options let several devices be chosen.
+function digitalAccessQuestions(next, section, { studyNote, studyHours }) {
+  return [
+    {
+      questionNumber: next(),
+      questionCode: "DEVICE_ACCESS",
+      questionText: "Which devices do you have access to? Select all that apply.",
+      section,
+      responseType: "MULTI_SELECT",
+      required: true,
+      options: ["Tablet", "Smartphone", "Laptop", "Desktop Computer", "None of the above"],
+      helpText: studyNote,
+      metadata: {
+        exclusiveOptions: ["None of the above"],
+        sectionIntro: "The next questions ask about your access to a device, internet, and electricity to help us understand whether you have the resources needed to participate in training and identify any support that may be required to enable your participation.",
+      },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "DEVICE_ACCESS_HOURS",
+      questionText: "On average, how many hours a day do you have access to your main device?",
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Less than 1 hour", "1-3 hours", "4-6 hours", "7 hours or more"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "INTERNET_ACCESS",
+      questionText: "Do you have internet connection/access?",
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes", "No", "Maybe"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "INTERNET_RELIABILITY",
+      questionText: `How reliable is your internet for ${studyHours}?`,
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Reliable", "On and Off", "Rare/None"],
+      showIf: { questionCode: "INTERNET_ACCESS", operator: "equals", value: "Yes" },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "POWER_SUPPLY_RELIABILITY",
+      questionText: "Is your power supply consistent enough to support a fixed daily virtual training schedule?",
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes, reliably", "Sometimes – it varies by day", "Rarely – it is unpredictable", "No"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "WEEKDAY_POWER_HOURS",
+      questionText: "How many hours of total power (grid + generator + solar combined) do you typically have access to on a weekday",
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Less than 2 hours", "2-6 hours", "6-12 hours", "12-18 hours", "18-24 hours"],
+    },
+    {
+      questionNumber: next(),
+      questionCode: "ALTERNATIVE_POWER_LOCATION",
+      questionText: "Is there a location outside your home where you can reliably access power for training? (e.g. business centre, library, co-working space)",
+      section,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: ["Yes – within walking distance", "Yes – but it requires transport", "No"],
+    },
+  ];
+}
+
 // The Physical and Virtual Academy forms share most questions. The Virtual Academy has no residential
 // accommodation question and asks about digital access before motivation. Questions are numbered in order.
 function academyQuestions(pathway) {
@@ -603,8 +693,11 @@ function academyQuestions(pathway) {
       section: PHYSICAL_SECTION_1,
       responseType: "BOOLEAN",
       required: true,
+      isEligibilityQuestion: true,
       options: ["Yes", "No"],
       metadata: {
+        // Applicants must be available for the whole course (Nigeria review, November 2026).
+        blockingAnswer: "No",
         labelByCountry: ACADEMY_AVAILABILITY[pathway].labelByCountry,
         helpTextByCountry: ACADEMY_AVAILABILITY[pathway].helpTextByCountry,
         sectionIntro: "The questions in this section ask about the training programme you would like to join and your availability to participate",
@@ -734,15 +827,7 @@ function academyQuestions(pathway) {
       section: motivationSection,
       responseType: "SINGLE_SELECT",
       required: true,
-      options: [
-        "Television",
-        "Radio",
-        "Social Media",
-        "Friends / Relatives",
-        "Organisation of Persons with Disabilities (OPD)",
-        "Flyer/Poster/Banner",
-        "Other",
-      ],
+      options: HEARD_ABOUT_OPTIONS,
     },
     {
       questionNumber: next(),
@@ -752,6 +837,32 @@ function academyQuestions(pathway) {
       responseType: "TEXT",
       required: true,
       showIf: { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: "Other" },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OPD",
+      questionText: "Which Organisation of Persons with Disabilities (OPD)?",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: NIGERIA_OPD_PARTNERS,
+      // Nigeria only, to track mobilisation partners (Nigeria review, November 2026).
+      showIf: { all: [
+        { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: OPD_OPTION },
+        { questionCode: "COUNTRY", operator: "equals", value: "Nigeria" },
+      ] },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OPD_OTHER",
+      questionText: "Which other OPD?",
+      section: motivationSection,
+      responseType: "TEXT",
+      required: true,
+      showIf: { all: [
+        { questionCode: "HEARD_ABOUT_PROJECT_OPD", operator: "equals", value: "Others" },
+        { questionCode: "COUNTRY", operator: "equals", value: "Nigeria" },
+      ] },
     },
     {
       questionNumber: next(),
@@ -769,76 +880,10 @@ function academyQuestions(pathway) {
     },
   ];
 
-  const digitalAccess = () => [
-    {
-      questionNumber: next(),
-      questionCode: "DEVICE_ACCESS",
-      questionText: "Which device do you have access to",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Tablet", "Smartphone", "Laptop", "Desktop Computer", "None of the above"],
-      helpText: "(Studies in this course will be conducted across all days of the week)",
-      metadata: {
-        sectionIntro: "The next questions ask about your access to a device, internet, and electricity to help us understand whether you have the resources needed to participate in training and identify any support that may be required to enable your participation.",
-      },
-    },
-    {
-      questionNumber: next(),
-      questionCode: "DEVICE_ACCESS_HOURS",
-      questionText: "On average, how many hours per day do you have access to your primary device in a day?",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Less than 1 hour", "1-3 hours", "4-6 hours", "7 hours or more"],
-    },
-    {
-      questionNumber: next(),
-      questionCode: "INTERNET_ACCESS",
-      questionText: "Do you have internet connection/access?",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Yes", "No", "Maybe"],
-    },
-    {
-      questionNumber: next(),
-      questionCode: "INTERNET_RELIABILITY",
-      questionText: "How reliable is your internet for ~10–15 hours of study per week?",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Reliable", "On and Off", "Rare/None"],
-      showIf: { questionCode: "INTERNET_ACCESS", operator: "equals", value: "Yes" },
-    },
-    {
-      questionNumber: next(),
-      questionCode: "POWER_SUPPLY_RELIABILITY",
-      questionText: "Is your power supply consistent enough to support a fixed daily virtual training schedule?",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Yes, reliably", "Sometimes – it varies by day", "Rarely – it is unpredictable", "No"],
-    },
-    {
-      questionNumber: next(),
-      questionCode: "WEEKDAY_POWER_HOURS",
-      questionText: "How many hours of total power (grid + generator + solar combined) do you typically have access to on a weekday",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Less than 2 hours", "2-6 hours", "6-12 hours", "12-18 hours", "18-24 hours"],
-    },
-    {
-      questionNumber: next(),
-      questionCode: "ALTERNATIVE_POWER_LOCATION",
-      questionText: "Is there a location outside your home where you can reliably access power for training? (e.g. business centre, library, co-working space)",
-      section: VIRTUAL_ACCESS_SECTION,
-      responseType: "SINGLE_SELECT",
-      required: true,
-      options: ["Yes – within walking distance", "Yes – but it requires transport", "No"],
-    },
-  ];
+  const digitalAccess = () => digitalAccessQuestions(next, VIRTUAL_ACCESS_SECTION, {
+    studyNote: "(Studies in this course will be conducted across all days of the week)",
+    studyHours: "~10–15 hours of study per week",
+  });
 
   return [
     ...setupQuestions(pathway),
@@ -854,9 +899,10 @@ const virtualQuestions = academyQuestions("VIRTUAL_ACADEMY");
 const ENTREPRENEUR_ELIGIBILITY_SECTION = "Section 1: Eligibility Criteria";
 const ENTREPRENEUR_PERSONAL_SECTION = "Section 2: Personal & contact details";
 const ENTREPRENEUR_PRIOR_SECTION = "Section 3: Prior Engagement with Sightsavers";
-const ENTREPRENEUR_MOTIVATION_SECTION = "Section 4: Motivation & Training Readiness";
+const ENTREPRENEUR_ACCESS_SECTION = "Section 4: Access to device, internet and electricity";
+const ENTREPRENEUR_MOTIVATION_SECTION = "Section 5: Motivation & Training Readiness";
 
-const digitalEntrepreneurshipQuestions = [
+const entrepreneurshipBaseQuestions = [
   ...setupQuestions("DIGITAL_ENTREPRENEURSHIP"),
   {
     questionNumber: 1,
@@ -933,6 +979,10 @@ const digitalEntrepreneurshipQuestions = [
     section: ENTREPRENEUR_PRIOR_SECTION,
     entrepreneurship: true,
   }),
+];
+
+// Questions 30 onward: access (new), then motivation renumbered after it, then "How did you hear".
+const entrepreneurshipMotivationQuestions = [
   {
     questionNumber: 30,
     questionCode: "DIGITAL_ENTERPRISE_CHARACTERISTICS",
@@ -1042,11 +1092,87 @@ const digitalEntrepreneurshipQuestions = [
   },
 ];
 
+function buildEntrepreneurshipQuestions() {
+  let number = 29;
+  const next = () => ++number;
+  const motivationSection = ENTREPRENEUR_MOTIVATION_SECTION;
+  const access = digitalAccessQuestions(next, ENTREPRENEUR_ACCESS_SECTION, {
+    studyNote: "Most of the training is online, so you will need a device for your studies.",
+    studyHours: "about 5 hours of study per week",
+  });
+  access[0] = {
+    ...access[0],
+    metadata: {
+      ...(access[0].metadata || {}),
+      sectionIntro: "The next questions ask about your access to a device, internet and electricity, so we understand whether you have what you need for the online parts of the training and what support may help.",
+    },
+  };
+  const motivation = entrepreneurshipMotivationQuestions.map((question) => ({ ...question, questionNumber: next() }));
+  const heardAbout = [
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT",
+      questionText: "How did you hear about the project?",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: HEARD_ABOUT_OPTIONS,
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OTHER",
+      questionText: "If Other, please specify",
+      section: motivationSection,
+      responseType: "TEXT",
+      required: true,
+      showIf: { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: "Other" },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OPD",
+      questionText: "Which Organisation of Persons with Disabilities (OPD)?",
+      section: motivationSection,
+      responseType: "SINGLE_SELECT",
+      required: true,
+      options: NIGERIA_OPD_PARTNERS,
+      // Nigeria only, to track mobilisation partners (Nigeria review, November 2026).
+      showIf: { all: [
+        { questionCode: "HEARD_ABOUT_PROJECT", operator: "equals", value: OPD_OPTION },
+        { questionCode: "COUNTRY", operator: "equals", value: "Nigeria" },
+      ] },
+    },
+    {
+      questionNumber: next(),
+      questionCode: "HEARD_ABOUT_PROJECT_OPD_OTHER",
+      questionText: "Which other OPD?",
+      section: motivationSection,
+      responseType: "TEXT",
+      required: true,
+      showIf: { all: [
+        { questionCode: "HEARD_ABOUT_PROJECT_OPD", operator: "equals", value: "Others" },
+        { questionCode: "COUNTRY", operator: "equals", value: "Nigeria" },
+      ] },
+    },
+  ];
+  return [...entrepreneurshipBaseQuestions, ...access, ...motivation, ...heardAbout];
+}
+
+const digitalEntrepreneurshipQuestions = buildEntrepreneurshipQuestions();
+
 // The form checks age and education as the applicant answers, using the same rules as the server.
 function withEligibilityRules(questions, pathway) {
   return questions.map((question) => {
     if (!["DATE_OF_BIRTH", "EDUCATION_LEVEL"].includes(question.questionCode)) return question;
     const metadata = { ...(question.metadata || {}), eligibilityByCountry: PATHWAY_ELIGIBILITY[pathway] };
+    if (question.questionCode === "EDUCATION_LEVEL") {
+      // Same stored answer, shown with the name used in each country's school system.
+      metadata.optionLabelsByCountry = {
+        Ghana: {
+          "Junior Secondary": "Junior High School (JHS)",
+          "Senior Secondary": "Senior High School (SHS)",
+        },
+      };
+    }
     if (question.questionCode === "EDUCATION_LEVEL" && pathway === "VIRTUAL_ACADEMY") {
       metadata.helpTextByCountry = {
         Nigeria: "If your highest qualification is an NCE, choose Other and enter NCE. The programme team will check it.",

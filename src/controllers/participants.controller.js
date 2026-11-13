@@ -97,7 +97,7 @@ function buildDirectoryWhere(user, query) {
   const pathway = String(query.pathway || "").toUpperCase();
   if (PATHWAYS.includes(pathway)) and.push({ pathway });
 
-  if (query.sex === "Female" || query.sex === "Male") and.push({ sex: query.sex });
+  if (["Female", "Male", "Prefer not to say"].includes(query.sex)) and.push({ sex: query.sex });
   if (query.disability === "yes") and.push({ hasDisability: true });
   if (query.disability === "no") and.push({ hasDisability: false });
 

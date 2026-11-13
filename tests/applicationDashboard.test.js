@@ -39,7 +39,7 @@ test('showcase covers 110 administrative regions and six months without database
   assert.equal(regionName({country:'Nigeria',state:'FCT'}), 'Abuja Federal Capital Territory');
 });
 test('gender filter and disaggregation keep every application counted once', () => {
-  assert.deepEqual(['Female', ' male ', 'F', 'm', '', null, 'Other'].map(sexName), ['Female', 'Male', 'Female', 'Male', 'Not recorded', 'Not recorded', 'Not recorded']);
+  assert.deepEqual(['Female', ' male ', 'F', 'm', '', null, 'Other', 'Prefer not to say'].map(sexName), ['Female', 'Male', 'Female', 'Male', 'Not stated', 'Not stated', 'Not stated', 'Not stated']);
   assert.throws(() => getDashboardFilters(admin, { sex: 'Unknown' }), { status: 400 });
   const rows = [
     { country: 'Kenya', sex: 'Female', ageAtApplication: 22, pathway: 'VIRTUAL_ACADEMY', createdAt: '2026-10-01T00:00:00Z', isEligible: true, status: 'APPROVED_FOR_ENROLLMENT', skillsTestAttempts: [{ percentage: 90 }] },
@@ -48,17 +48,17 @@ test('gender filter and disaggregation keep every application counted once', () 
     { country: 'Ghana', sex: null, ageAtApplication: 31, pathway: 'PHYSICAL_ACADEMY', createdAt: '2026-10-03T00:00:00Z', isEligible: true },
   ];
   const all = summarizeApplications(rows, getDashboardFilters(admin));
-  assert.deepEqual(all.genders.map(g => [g.name, g.count]), [['Female', 2], ['Male', 1], ['Not recorded', 1]]);
+  assert.deepEqual(all.genders.map(g => [g.name, g.count]), [['Female', 2], ['Male', 1], ['Not stated', 1]]);
   for (const list of [all.ages, all.countries, all.pathways, all.monthly, all.regions, all.genders]) {
     for (const item of list) assert.equal(Object.values(item.bySex).reduce((n, v) => n + v, 0), item.count);
   }
-  assert.deepEqual(all.ages.find(a => a.name === '18–24').bySex, { Female: 1, Male: 1, 'Not recorded': 0 });
+  assert.deepEqual(all.ages.find(a => a.name === '18–24').bySex, { Female: 1, Male: 1, 'Not stated': 0 });
   assert.deepEqual(all.genderFunnel.map(s => [s.name, s.bySex.Female, s.bySex.Male]), [['Applied', 2, 1], ['Initially eligible', 2, 0], ['ICT test completed', 1, 0], ['Shortlisted / enrolled', 1, 0]]);
   const women = summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Female' }));
   assert.equal(women.totals.applications, 2);
   assert.equal(women.totals.shortlisted, 1);
   assert.equal(women.countries.find(c => c.name === 'Ghana').count, 0);
-  assert.equal(summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Not recorded' })).totals.applications, 1);
+  assert.equal(summarizeApplications(rows, getDashboardFilters(admin, { sex: 'Not stated' })).totals.applications, 1);
 });
 test('disability types and awareness sources map both form wordings onto one list', () => {
   assert.deepEqual(disabilityTypes({ disabilityType: 'Physical disability (mobility impairments, short stature, cerebral palsy, spina bifida), Person who is blind' }), ['Physical disability', 'Blind']);
@@ -74,7 +74,7 @@ test('disability types and awareness sources map both form wordings onto one lis
   ];
   const result = summarizeApplications(rows, getDashboardFilters(admin));
   assert.equal(result.disability.count, 2);
-  assert.deepEqual(result.disability.bySex, { Female: 1, Male: 1, 'Not recorded': 0 });
+  assert.deepEqual(result.disability.bySex, { Female: 1, Male: 1, 'Not stated': 0 });
   assert.equal(result.disability.types.find(t => t.name === 'Low vision').count, 2);
   assert.equal(result.disability.types.find(t => t.name === 'Albinism').count, 1);
   assert.equal(result.sources.find(t => t.name === 'Radio').count, 2);

@@ -91,11 +91,11 @@ function baseConsent({ version, programmeSentence, firstSentence, supportRequest
     informationLinks: [
       {
         before: "For more information, see ",
-        label: "Sightsavers' Data Protection Policy",
-        url: "https://sightsavershh.sharepoint.com/Policy%20Library/Forms/AllItems.aspx?id=%2FPolicy%20Library%2FData%20Protection%20Policy%2Epdf&parent=%2FPolicy%20Library",
+        label: "Sightsavers' privacy policy",
+        url: "https://www.sightsavers.org/terms-and-conditions/privacy-policy/",
         between: " and the Foundation’s privacy statement at ",
-        secondLabel: "https://mastercardfdn.org/privacy/",
-        secondUrl: "https://mastercardfdn.org/privacy/",
+        secondLabel: "https://mastercardfdn.org/en/privacy/",
+        secondUrl: "https://mastercardfdn.org/en/privacy/",
       },
     ],
     rightsTitle: "Your Rights:",

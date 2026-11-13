@@ -102,11 +102,17 @@ function validateResponses(answers, questions = QUESTIONS) {
 
     if (question.responseType === "NUMBER") {
       const numberValue = Number(value);
-      if (!Number.isFinite(numberValue) || numberValue < 0) {
+      const min = question.metadata?.min ?? 0;
+      const max = question.metadata?.max;
+      if (!Number.isFinite(numberValue) || numberValue < min) {
         invalid.push({
           questionCode: question.questionCode,
-          message: `${question.questionText} must be a valid number of zero or more.`,
+          message: min === 0 ? "Enter 0 or more." : `Enter ${min} or more.`,
         });
+      } else if (max !== undefined && numberValue > max) {
+        invalid.push({ questionCode: question.questionCode, message: `Enter ${max} or less.` });
+      } else if (question.metadata?.integer && !Number.isInteger(numberValue)) {
+        invalid.push({ questionCode: question.questionCode, message: "Enter a whole number." });
       }
     }
 
@@ -121,14 +127,14 @@ function validateResponses(answers, questions = QUESTIONS) {
     }
 
     if (
-      question.questionCode === "M3_5" &&
+      question.exclusiveOption &&
       Array.isArray(value) &&
-      value.includes("None of the above") &&
+      value.includes(question.exclusiveOption) &&
       value.length > 1
     ) {
       invalid.push({
         questionCode: question.questionCode,
-        message: "None of the above cannot be selected together with another option.",
+        message: `${question.exclusiveOption} cannot be selected together with another option.`,
       });
     }
   }

@@ -39,3 +39,18 @@ for (const country of ['Kenya', 'Ghana', 'Nigeria', 'Zambia']) {
     assert.deepEqual(ageReasons('DIGITAL_ENTREPRENEURSHIP', country, 46), ['AGE_OUTSIDE_REVIEW_RANGE']);
   });
 }
+
+test('Ghana Digital Entrepreneurship accepts Junior High School; other countries keep their minimum', () => {
+  const run = (country, educationLevel) => {
+    const responses = [
+      { questionCode: 'COUNTRY', answer: country },
+      { questionCode: 'DATE_OF_BIRTH', answer: birthDateForAge(30) },
+      { questionCode: 'EDUCATION_LEVEL', answer: educationLevel },
+      { questionCode: 'TRAINING_AVAILABILITY', answer: 'Yes' },
+    ];
+    return calculateEligibility(responses, APPLIED_ON, 'DIGITAL_ENTREPRENEURSHIP').reasonCodes.filter((code) => /EDUCATION/.test(code));
+  };
+  assert.deepEqual(run('Ghana', 'Junior Secondary'), []);
+  assert.deepEqual(run('Ghana', 'Primary'), ['EDUCATION_BELOW_MINIMUM']);
+  assert.deepEqual(run('Nigeria', 'Junior Secondary'), ['EDUCATION_BELOW_MINIMUM']);
+});

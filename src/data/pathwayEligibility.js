@@ -21,6 +21,8 @@ const BACHELOR_OR_HIGHER = [BACHELOR, POSTGRADUATE];
 const HND_OR_HIGHER = [HND, ...BACHELOR_OR_HIGHER];
 const DIPLOMA_OR_HIGHER = [DIPLOMA, ...HND_OR_HIGHER];
 const SENIOR_SECONDARY_OR_HIGHER = [SENIOR_SECONDARY, CERTIFICATE, ...DIPLOMA_OR_HIGHER];
+// Junior High School (JHS) in Ghana.
+const JUNIOR_SECONDARY_OR_HIGHER = ["Junior Secondary", ...SENIOR_SECONDARY_OR_HIGHER];
 
 const PATHWAY_ELIGIBILITY = {
   PHYSICAL_ACADEMY: {
@@ -37,7 +39,8 @@ const PATHWAY_ELIGIBILITY = {
   },
   DIGITAL_ENTREPRENEURSHIP: {
     default: { minAge: 18, maxAge: 45, education: null },
-    Ghana: { minAge: 18, maxAge: 45, education: SENIOR_SECONDARY_OR_HIGHER },
+    // Junior High School is the minimum in Ghana (testing feedback, Ghana team, November 2026).
+    Ghana: { minAge: 18, maxAge: 45, education: JUNIOR_SECONDARY_OR_HIGHER },
     Kenya: {
       minAge: 18,
       maxAge: 45,

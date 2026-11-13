@@ -164,6 +164,10 @@ function isQuestionVisible(question, responses = []) {
 }
 
 function matchesShowCondition(condition, responses) {
+  // { all: [...] }: every listed condition must match.
+  if (Array.isArray(condition.all)) {
+    return condition.all.every((item) => matchesShowCondition(item, responses));
+  }
   const controllingAnswer = getAnswerValue(responses, condition.questionCode);
   const expectedValue = condition.value;
   const operator = condition.operator;
@@ -323,6 +327,15 @@ function validateQuestionFormats(responses = [], questions = registrationFormQue
     if (!isQuestionVisible(question, responses)) continue;
 
     const answer = getAnswerValue(responses, question.questionCode);
+    const exclusive = question.metadata?.exclusiveOptions;
+    if (Array.isArray(answer) && answer.length > 1 && Array.isArray(exclusive) && answer.some((item) => exclusive.includes(item))) {
+      invalidQuestions.push({
+        questionCode: question.questionCode,
+        questionText: question.questionText,
+        message: `${answer.find((item) => exclusive.includes(item))} cannot be selected together with another option.`,
+      });
+      continue;
+    }
     const isEmpty =
       answer === undefined ||
       answer === null ||
@@ -673,6 +686,8 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     `This pathway is for applicants aged ${ageRangeLabel}. Your application has been saved and flagged for programme review.`,
   ENTREPRENEURSHIP_AVAILABILITY_REQUIRED: () =>
     "The Digital Entrepreneurship programme requires you to be available for the full training period.",
+  ACADEMY_AVAILABILITY_REQUIRED: () =>
+    "This academy requires you to be available for the full training period. Unfortunately, you said you are not available.",
   EDUCATION_BELOW_MINIMUM: ({ minimumEducationLabel }) =>
     `This pathway requires a completed ${minimumEducationLabel} qualification. Unfortunately, you do not meet the education requirement.`,
   LOCATION_OUTSIDE_AREA_REVIEW: ({ locationLabel }) =>
@@ -936,8 +951,13 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     reasonCodes.push("ENTREPRENEURSHIP_AVAILABILITY_REQUIRED");
   }
 
+  if (["PHYSICAL_ACADEMY", "VIRTUAL_ACADEMY"].includes(normalizedPathway) && trainingAvailability === false) {
+    reasonCodes.push("ACADEMY_AVAILABILITY_REQUIRED");
+  }
+
   const blockingReasonCodes = [
     "ENTREPRENEURSHIP_AVAILABILITY_REQUIRED",
+    "ACADEMY_AVAILABILITY_REQUIRED",
     "ACADEMY_AGE_OUTSIDE_RANGE",
     "EDUCATION_BELOW_MINIMUM",
     "DISABILITY_REQUIRED",
@@ -1456,7 +1476,7 @@ async function submitRegistration(req, res) {
 
           hasDeviceAccess:
             getAnswerValue(parsedResponses, "DEVICE_ACCESS") !== undefined
-              ? String(getAnswerValue(parsedResponses, "DEVICE_ACCESS") || "").trim() !== "None of the above"
+              ? [].concat(getAnswerValue(parsedResponses, "DEVICE_ACCESS") || []).some((device) => String(device).trim() && String(device).trim() !== "None of the above")
               : null,
 
           heardAboutProject: answerToText(

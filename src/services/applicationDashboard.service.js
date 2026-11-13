@@ -1,7 +1,8 @@
 const { COUNTRIES, LOCATION_HIERARCHY } = require('../data/administrativeLocations');
 const AGE_BANDS = ['Under 18', '18–24', '25–29', '30–35', '36–45', '46+', 'Not recorded'];
 const PATHWAYS = ['PHYSICAL_ACADEMY', 'VIRTUAL_ACADEMY', 'DIGITAL_ENTREPRENEURSHIP'];
-const SEXES = ['Female', 'Male', 'Not recorded'];
+// "Not stated": the applicant chose "Prefer not to say", or no answer was recorded.
+const SEXES = ['Female', 'Male', 'Not stated'];
 const SHORTLISTED_STATUSES = ['APPROVED_FOR_ENROLLMENT', 'ENROLLED_IN_DHIS2_PROGRAM'];
 // The two application forms word options differently; both map onto one reporting list.
 // Disability types are stored joined with ", " but some option names contain commas, so match patterns instead of splitting.
@@ -65,7 +66,7 @@ function sexName(value) {
   const key = String(value || '').trim().toLowerCase();
   if (['female', 'f', 'woman'].includes(key)) return 'Female';
   if (['male', 'm', 'man'].includes(key)) return 'Male';
-  return 'Not recorded';
+  return 'Not stated';
 }
 function getDashboardFilters(user, query = {}) {
   const country = String(query.country || '').trim();

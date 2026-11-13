@@ -219,7 +219,7 @@ const registrationFormQuestions = [
     section: "Personal Details",
     responseType: "SINGLE_SELECT",
     required: true,
-    options: ["Female", "Male"],
+    options: ["Female", "Male", "Prefer not to say"],
   },
   {
     questionNumber: 15,

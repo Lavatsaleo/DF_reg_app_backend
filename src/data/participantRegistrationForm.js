@@ -44,12 +44,12 @@ const CONSENT = {
   ],
   dataProtectionLinks: [
     {
-      label: "Sightsavers' Data Protection Policy",
-      url: "https://sightsavershh.sharepoint.com/Policy%20Library/Forms/AllItems.aspx?id=%2FPolicy%20Library%2FData%20Protection%20Policy%2Epdf&parent=%2FPolicy%20Library",
+      label: "Sightsavers' privacy policy",
+      url: "https://www.sightsavers.org/terms-and-conditions/privacy-policy/",
     },
     {
       label: "Mastercard Foundation's privacy statement",
-      url: "https://mastercardfdn.org/privacy/",
+      url: "https://mastercardfdn.org/en/privacy/",
     },
   ],
   rightsTitle: "Your Rights",
@@ -149,8 +149,36 @@ const QUESTIONS = [
       Zambia: "Are you a registered member of the Zambia Agency for Persons with Disabilities (ZAPD)?",
       Kenya: "Are you a registered member of the National Council for Persons with Disabilities (NCPWD)?",
       Nigeria: "Are you a registered member of the National Commission for Persons with Disabilities (NCPWD)?",
-      Ghana: "Are you a registered member of the National Council on Persons with Disability (NCPD)?",
     },
+    // In Ghana people with disabilities do not register with the NCPD, so Ghana asks M1_1_GH instead
+    // (testing feedback, Ghana team, November 2026).
+    exceptCountries: ["Ghana"],
+  },
+  {
+    questionCode: "M1_1_GH", displayNumber: "M1.1",
+    questionText: "Which of the following national disability organisations are you a member of? Select all that apply.",
+    section: "Module 1: Document & disability registration verification",
+    responseType: "MULTI_SELECT", required: true,
+    options: [
+      "None of the above",
+      "Ghana Blind Union (GBU)",
+      "Ghana Society of the Physically Disabled (GSPD)",
+      "Ghana National Association of the Deaf (GNAD)",
+      "Ghana Association of Persons with Albinism (GAPA)",
+      "Mental Health Society of Ghana (MEHSOG)",
+      "Other (please specify)",
+    ],
+    exclusiveOption: "None of the above",
+    metadata: { exclusiveOptions: ["None of the above"] },
+    onlyCountries: ["Ghana"],
+  },
+  {
+    questionCode: "M1_1_GH_OTHER", displayNumber: "M1.1a",
+    questionText: "Which other national disability organisation are you a member of?",
+    section: "Module 1: Document & disability registration verification",
+    responseType: "TEXT", required: true,
+    showIf: { questionCode: "M1_1_GH", operator: "contains", value: "Other (please specify)" },
+    onlyCountries: ["Ghana"],
   },
   {
     questionCode: "M1_2", displayNumber: "M1.2",
@@ -265,6 +293,7 @@ const QUESTIONS = [
     questionText: "Household size (how many people usually sleep & eat there, including you)",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "NUMBER", required: true, helpText: "people",
+    metadata: { min: 1, max: 50, integer: true },
   },
   {
     questionCode: "M3_4", displayNumber: "M3.4",
@@ -293,6 +322,7 @@ const QUESTIONS = [
     questionText: "In the last 4 weeks, have you (select all that apply)?",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "MULTI_SELECT", required: true,
+    exclusiveOption: "None of the above",
     options: [
       "Applied for a permit, licence or arranged funding for a business",
       "Looked for land, premises, machinery, supplies or farming inputs",
@@ -362,10 +392,11 @@ const QUESTIONS = [
   },
   {
     questionCode: "M3_10", displayNumber: "M3.10",
-    questionText: "On average, what was your income from your main job (take-home pay) per period selected in M3.7",
+    // One period for everyone, so incomes can be compared (Nigeria review, November 2026).
+    questionText: "On average, how much do you take home from your main job each month?",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "NUMBER", required: true,
-    helpText: "Local currency. Database formula to calculate on aggregated month timeframe.",
+    helpText: "In your local currency. If you are paid weekly or daily, add up what you usually take home in a month.",
     showIf: {
       questionCode: "M3_4", operator: "in",
       value: ["Working and receive a wage", "Working but receive payment in kind", "Self-employed"],
@@ -373,9 +404,10 @@ const QUESTIONS = [
   },
   {
     questionCode: "M3_8", displayNumber: "M3.8",
-    questionText: "For your main job, how many hours do you usually work per [period from M3.7]?",
+    questionText: "For your main job, how many hours do you usually work per week?",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "NUMBER", required: true,
+    metadata: { min: 0, max: 168 },
     showIf: {
       questionCode: "M3_4", operator: "in",
       value: ["Working and receive a wage", "Working but receive payment in kind", "Self-employed"],
@@ -383,9 +415,10 @@ const QUESTIONS = [
   },
   {
     questionCode: "M3_9", displayNumber: "M3.9",
-    questionText: "Last [period from M3.7], how many hours did you actually work at your main job (excluding meal breaks, travel time, etc.)?",
+    questionText: "Last week, how many hours did you actually work at your main job (excluding meal breaks, travel time, etc.)?",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "NUMBER", required: true,
+    metadata: { min: 0, max: 168 },
     showIf: {
       questionCode: "M3_4", operator: "in",
       value: ["Working and receive a wage", "Working but receive payment in kind", "Self-employed"],
@@ -436,7 +469,7 @@ const QUESTIONS = [
   },
   {
     questionCode: "M3_15", displayNumber: "M3.15",
-    questionText: "Imagine ten steps: on the bottom step (1) stand the poorest people, on the top step (10) stand the richest people (show step-ladder picture). Which step are you on today?",
+    questionText: "Imagine ten steps: on the bottom step (1) stand the poorest people, on the top step (10) stand the richest people. Which step are you on today?",
     section: "Module 3: Socio-demographic, household & economic status",
     responseType: "SINGLE_SELECT", required: true,
     options: ["1","2","3","4","5","6","7","8","9","10"],
@@ -563,11 +596,15 @@ const CONSENT_RESPONSE_DEFINITIONS = [
   ["PR_CONSENT_ASSISTANCE_DATE", "Assistance date", "DATE"],
 ];
 
-// Questions as a participant from the given country should see them.
+// Questions as a participant from the given country should see them: country-only questions are
+// kept or dropped, and country wording replaces the default.
 function getQuestionsForCountry(country) {
-  return QUESTIONS.map(({ textByCountry, ...question }) =>
-    textByCountry?.[country] ? { ...question, questionText: textByCountry[country] } : question
-  );
+  return QUESTIONS
+    .filter((question) => !question.onlyCountries || question.onlyCountries.includes(country))
+    .filter((question) => !question.exceptCountries || !question.exceptCountries.includes(country))
+    .map(({ textByCountry, onlyCountries, exceptCountries, ...question }) =>
+      textByCountry?.[country] ? { ...question, questionText: textByCountry[country] } : question
+    );
 }
 
 module.exports = {
