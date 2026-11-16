@@ -14,7 +14,7 @@
     node src/scripts/resetParticipantData.js                      dry run, shows counts only
     node src/scripts/resetParticipantData.js --confirm <db name>  deletes
   Options:
-    --delete-files     also delete uploaded applicant documents from S3 storage
+    --delete-files     also delete uploaded applicant documents from MinIO
     --reset-counters   restart participant numbers at 000001 (only if nothing was sent to DHIS2)
 */
 require("dotenv").config();
@@ -66,8 +66,7 @@ async function counts(prisma) {
 
 async function removeStoredFiles(prisma) {
   const { DeleteObjectsCommand } = require("@aws-sdk/client-s3");
-  const s3Client = require("../config/s3");
-  const client = s3Client.s3Client || s3Client;
+  const { storageClient: client } = require("../config/storage");
   const documents = await prisma.applicantDocument.findMany({ select: { storageBucket: true, storageKey: true } });
   const byBucket = new Map();
   for (const doc of documents) {

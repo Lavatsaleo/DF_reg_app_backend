@@ -1,7 +1,7 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const { hashToken } = require("../utils/tokenUtils");
-const { uploadFileToS3, detectFileType } = require("../services/fileUpload.service");
+const { uploadDocument, detectFileType } = require("../services/fileUpload.service");
 const { sendEmail } = require("../services/email.service");
 const {
   createAndSendParticipantRegistrationInvitation,
@@ -550,7 +550,7 @@ async function uploadParticipantRegistrationDocument(req, res) {
       return res.status(400).json({ success: false, message: "Please upload a PDF, JPG or PNG file." });
     }
 
-    const uploaded = await uploadFileToS3(file, invitation.applicant.id, question.documentType);
+    const uploaded = await uploadDocument(file, invitation.applicant.id, question.documentType);
     const document = {
       documentType: question.documentType,
       originalName: uploaded.originalName,
@@ -790,7 +790,7 @@ async function submitParticipantRegistration(req, res) {
 
       const file = getFile(req, question.documentField);
       if (file) {
-        const uploaded = await uploadFileToS3(file, applicantId, question.documentType);
+        const uploaded = await uploadDocument(file, applicantId, question.documentType);
         uploadedDocuments.push({
           applicantId,
           documentType: question.documentType,

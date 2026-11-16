@@ -394,10 +394,7 @@ model ApplicantDocument {
   mimeType     String
   sizeBytes    Int
 
-  /*
-    Local MVP: MinIO
-    Production: AWS S3
-  */
+  // Where the file is kept in MinIO.
   storageBucket String
   storageKey    String
   storageUrl    String? @db.Text

@@ -1,7 +1,7 @@
 # Digital Futures: deployment guide
 
 The Digital Futures registration portal runs as two Docker images plus a MySQL database and
-S3-compatible document storage. This guide is for whoever hosts the Test and Production environments.
+MinIO for document storage. This guide is for whoever hosts the Test and Production environments.
 
 ## 1. What runs
 
@@ -10,7 +10,7 @@ S3-compatible document storage. This guide is for whoever hosts the Test and Pro
 | `web` | `19631/df-frontend` | 8080 (HTTP) | nginx: serves the React site and forwards `/api/*` to `api` |
 | `api` | `19631/df-backend` | 5000 (HTTP, internal only) | Node.js API; applies database migrations when it starts |
 | `mysql` | `mysql:8.4` (optional) | 3306 (internal only) | Database, unless a managed MySQL 8 is used |
-| `minio` | `minio/minio` (optional) | 9000 (internal only) | Document storage, unless another S3-compatible service is used |
+| `minio` | `cgr.dev/chainguard/minio` | 9000 (internal only) | Document storage (ID cards, certificates) on a persistent volume |
 
 ```
  Internet ──HTTPS──> [ load balancer / reverse proxy with the certificate ]
@@ -20,7 +20,7 @@ S3-compatible document storage. This guide is for whoever hosts the Test and Pro
                            ├─ /           -> static site (single-page app)
                            ├─ /healthz    -> health check
                            └─ /api/*      -> api :5000 ──> MySQL 3306
-                                                     └──> S3 / MinIO 9000
+                                                     └──> MinIO 9000
                                                      └──> SMTP (outbound email)
 ```
 
@@ -40,9 +40,10 @@ Tags:
 
 | Tag | When it is published | Use for |
 | --- | --- | --- |
-| `test` | every push to the `Test` branch | Test environment |
-| `1.2.3` and `prod` | a release tag `v1.2.3` | Production (pin the version number) |
-| `sha-<commit>` | every build | pinning or rolling back exactly |
+| `test` | every push to the `Test` branch | **Test** environment |
+| `prod` | every push to the `master` branch | **Production** environment |
+| `sha-<commit>` | every build | pinning or rolling back to an exact build |
+| `1.2.3` | a release tag `v1.2.3` (optional) | marking a release |
 
 No sign-in is needed to pull:
 
@@ -68,7 +69,7 @@ Every setting is listed and explained in [`.env.example`](.env.example). The ess
 | `DATABASE_URL` | yes | `mysql://user:password@host:3306/database`. Add `?sslaccept=strict` for Azure Database for MySQL. |
 | `AUTH_TOKEN_SECRET` | yes | 48+ random characters, different per environment. |
 | `FRONTEND_BASE_URL` | yes | Public HTTPS address of the site, e.g. `https://digitalfutures.duckdns.org`. Used in email links and as the only allowed browser origin. |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_BUCKET`, `S3_FORCE_PATH_STYLE` | yes | Private bucket for applicant documents. |
+| `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET` | yes | MinIO address (`http://minio:9000` in the compose file), credentials and the private bucket for applicant documents. The API creates the bucket on first start. |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM_EMAIL` | yes | Invitations, one-time codes, password resets and rejection reasons are all sent by email. |
 | `NODE_ENV` | set by the image | `production`. |
 | `RUN_MIGRATIONS` | no (default `true`) | Applies database migrations on start. With more than one API replica, set `false` and run migrations once per release (below). |
@@ -108,8 +109,8 @@ No other routing is needed: one address serves both the site and `/api`.
 ```
 cd deploy
 cp .env.example .env               # fill in every value
-docker compose --profile bundled up -d    # with the bundled MySQL and MinIO
-# or: docker compose up -d                # with managed MySQL and S3 storage set in .env
+docker compose --profile bundled up -d    # with the bundled MySQL container
+# or: docker compose up -d                # with a managed MySQL database (DATABASE_URL in .env)
 docker compose logs -f api         # wait for "running on port 5000"
 ```
 
@@ -150,7 +151,8 @@ With several API replicas (`RUN_MIGRATIONS=false`), run migrations once before s
 | | Test | Production |
 | --- | --- | --- |
 | Address | `https://digitalfutures.duckdns.org` (current) | to be confirmed by Sightsavers |
-| Image tag | `test` | release version, e.g. `1.0.0` |
+| Image tag | `test` (from the `Test` branch) | `prod` (from the `master` branch) |
+| `.env` | `IMAGE_TAG=test`, `DEPLOY_ENV=test` | `IMAGE_TAG=prod`, `DEPLOY_ENV=prod` |
 | Data | test data only | live applicant data |
 | Email | real SMTP, test recipients | real SMTP |
 

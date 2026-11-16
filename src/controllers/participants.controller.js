@@ -10,7 +10,7 @@
  */
 const { GetObjectCommand } = require("@aws-sdk/client-s3");
 const prisma = require("../config/prisma");
-const s3Client = require("../config/s3");
+const { storageClient } = require("../config/storage");
 const {
   getApplicantCountryFilter,
   getRequestedCountry,
@@ -507,7 +507,7 @@ async function downloadParticipantDocument(req, res) {
     const document = applicant.documents[0];
     if (!document) return res.status(404).json({ success: false, message: "Document not found." });
 
-    const object = await s3Client.send(new GetObjectCommand({ Bucket: document.storageBucket, Key: document.storageKey }));
+    const object = await storageClient.send(new GetObjectCommand({ Bucket: document.storageBucket, Key: document.storageKey }));
     console.info(`[participants] document downloaded applicant=${applicant.id} document=${document.id} by=${req.user.id}`);
 
     const safeName = String(document.originalName || document.fileName).replace(/[^\w.\- ]+/g, "_").slice(0, 120) || "document";

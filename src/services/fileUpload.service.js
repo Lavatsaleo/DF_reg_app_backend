@@ -1,6 +1,6 @@
 const { PutObjectCommand } = require("@aws-sdk/client-s3");
 const crypto = require("crypto");
-const s3Client = require("../config/s3");
+const { storageClient, storageConfig } = require("../config/storage");
 
 const DOCUMENT_TYPES = [
   "NATIONAL_ID",
@@ -49,11 +49,12 @@ function rejectFile(message) {
   return error;
 }
 
-async function uploadFileToS3(file, applicantId, documentType = "OTHER") {
-  const bucket = process.env.S3_BUCKET;
+// Saves an applicant document to the private MinIO bucket.
+async function uploadDocument(file, applicantId, documentType = "OTHER") {
+  const bucket = storageConfig.bucket;
 
   if (!bucket) {
-    throw new Error("S3_BUCKET is not configured in .env");
+    throw new Error("MINIO_BUCKET is not configured in .env");
   }
 
   const detected = detectFileType(file?.buffer);
@@ -74,12 +75,11 @@ async function uploadFileToS3(file, applicantId, documentType = "OTHER") {
     ContentType: detected.mimeType,
     // Opened from storage, a document downloads rather than rendering in the storage domain.
     ContentDisposition: "attachment",
-    ServerSideEncryption: process.env.S3_SERVER_SIDE_ENCRYPTION || undefined,
   });
 
-  await s3Client.send(command);
+  await storageClient.send(command);
 
-  const storageUrl = `${process.env.S3_ENDPOINT}/${bucket}/${storageKey}`;
+  const storageUrl = `${storageConfig.endpoint}/${bucket}/${storageKey}`;
 
   return {
     storageBucket: bucket,
@@ -93,7 +93,7 @@ async function uploadFileToS3(file, applicantId, documentType = "OTHER") {
 }
 
 module.exports = {
-  uploadFileToS3,
+  uploadDocument,
   detectFileType,
   normalizeDocumentType,
   cleanOriginalName,

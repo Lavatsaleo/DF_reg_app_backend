@@ -1,6 +1,7 @@
 # Builds the API image and publishes it to Docker Hub:
-#   push to the Test branch     -> 19631/df-backend:test
-#   push a version tag (v1.2.3) -> 19631/df-backend:1.2.3 and :prod
+#   push to the Test branch     -> 19631/df-backend:test   (Test environment)
+#   push to the master branch   -> 19631/df-backend:prod   (Production)
+#   push a version tag (v1.2.3) -> 19631/df-backend:1.2.3  (optional, to mark a release)
 # Every image is also tagged with its commit (sha-<short sha>) so a deployment can be pinned exactly.
 #
 # Repository setting needed (Settings > Secrets and variables > Actions > Secrets):
@@ -10,7 +11,7 @@ name: Backend Docker image
 
 on:
   push:
-    branches: [Test]
+    branches: [Test, master]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -40,7 +41,7 @@ jobs:
           tags: |
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/Test' }}
             type=semver,pattern={{version}}
-            type=raw,value=prod,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=prod,enable=${{ github.ref == 'refs/heads/master' }}
             type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6

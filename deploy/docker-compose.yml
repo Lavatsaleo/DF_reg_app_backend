@@ -1,11 +1,11 @@
 # Digital Futures: full stack for one environment (Test or Production).
 #
 #   cp .env.example .env              # then fill in every value
-#   docker compose --profile bundled up -d    # with the MySQL and MinIO containers below
-#   docker compose up -d                      # with a managed database and S3-compatible storage
+#   docker compose --profile bundled up -d    # with the MySQL container below
+#   docker compose up -d                      # with a managed MySQL database (set DATABASE_URL)
 #
 # Only the web container is published (port 8080). Put HTTPS (load balancer, Front Door, Caddy or
-# nginx with a certificate) in front of it. The API, database and storage stay on the private network.
+# nginx with a certificate) in front of it. The API, database and MinIO stay on the private network.
 
 name: digital-futures-${DEPLOY_ENV:-test}
 
@@ -33,9 +33,8 @@ services:
         required: false
       minio:
         condition: service_started
-        required: false
 
-  # ---- Bundled services (profile "bundled"). Skip them when using managed MySQL and S3 storage. ----
+  # ---- Bundled MySQL (profile "bundled"). Skip it when using a managed MySQL database. ----
 
   mysql:
     image: mysql:8.4
@@ -54,13 +53,11 @@ services:
       timeout: 5s
       retries: 12
 
-  # S3-compatible document storage (ID cards, certificates). MinIO no longer publishes free images on
-  # Docker Hub; this is Chainguard's maintained build. Azure Blob Storage does not speak the S3 protocol,
-  # so on Azure either run this container on persistent storage or use another S3-compatible service.
+  # ---- Document storage: MinIO (ID cards, certificates). Keep minio_data on persistent, backed-up disk.
+  # MinIO no longer publishes free images on Docker Hub; this is Chainguard's maintained build.
   # The API creates its private bucket on first start.
   minio:
     image: cgr.dev/chainguard/minio:latest
-    profiles: [bundled]
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:

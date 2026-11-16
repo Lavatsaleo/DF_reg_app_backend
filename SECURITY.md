@@ -12,7 +12,6 @@ safe error messages. These settings on the server are also needed for it to be s
 | `FRONTEND_BASE_URL` | The public site address, e.g. `https://df.example.org`. Only this origin may call the API from a browser. |
 | `TRUST_PROXY` | Leave unset if the reverse proxy is on the same machine or a private network. If it is on a public address, set the number of proxies in front of the API (usually `1`). This keeps rate limits tied to the real client address. |
 | `BOOTSTRAP_ADMIN_TOKEN` | Only while creating the very first admin; a random value of 24+ characters sent as the `X-Bootstrap-Token` header. Remove it afterwards. |
-| `S3_SERVER_SIDE_ENCRYPTION` | Optional, e.g. `AES256`, to encrypt uploaded documents at rest. |
 
 ## Web server / reverse proxy (nginx or similar)
 
@@ -25,11 +24,12 @@ safe error messages. These settings on the server are also needed for it to be s
 - Hide the server version (`server_tokens off;` in nginx).
 - Limit upload bodies to about 25 MB (`client_max_body_size 25m;`).
 
-## Document storage (S3 / MinIO)
+## Document storage (MinIO)
 
 - The bucket must be private: no public read and no public listing. ID and disability
   documents are stored there.
 - Use storage credentials that can only read and write that one bucket.
+- Keep the MinIO data volume on an encrypted disk, and include it in the backups.
 
 ## Database and secrets
 

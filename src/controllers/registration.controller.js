@@ -1,5 +1,5 @@
 const prisma = require("../config/prisma");
-const { uploadFileToS3, detectFileType, normalizeDocumentType } = require("../services/fileUpload.service");
+const { uploadDocument, detectFileType, normalizeDocumentType } = require("../services/fileUpload.service");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
 const {
   getApplicationQuestionsForPathway,
@@ -1660,7 +1660,7 @@ async function submitRegistration(req, res) {
 
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
-        const uploadedFile = await uploadFileToS3(
+        const uploadedFile = await uploadDocument(
           file,
           applicant.id,
           normalizeDocumentType(req.body.documentType)
