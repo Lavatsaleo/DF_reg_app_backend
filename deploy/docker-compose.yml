@@ -1,0 +1,74 @@
+# Digital Futures: full stack for one environment (Test or Production).
+#
+#   cp .env.example .env              # then fill in every value
+#   docker compose --profile bundled up -d    # with the MySQL and MinIO containers below
+#   docker compose up -d                      # with a managed database and S3-compatible storage
+#
+# Only the web container is published (port 8080). Put HTTPS (load balancer, Front Door, Caddy or
+# nginx with a certificate) in front of it. The API, database and storage stay on the private network.
+
+name: digital-futures-${DEPLOY_ENV:-test}
+
+services:
+  web:
+    image: ${IMAGE_NAMESPACE:-19631}/df-frontend:${IMAGE_TAG:-test}
+    restart: unless-stopped
+    environment:
+      BACKEND_UPSTREAM: api:5000
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      - api
+
+  api:
+    image: ${IMAGE_NAMESPACE:-19631}/df-backend:${IMAGE_TAG:-test}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+        required: false
+      minio:
+        condition: service_started
+        required: false
+
+  # ---- Bundled services (profile "bundled"). Skip them when using managed MySQL and S3 storage. ----
+
+  mysql:
+    image: mysql:8.4
+    profiles: [bundled]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-digital_futures}
+      MYSQL_USER: ${MYSQL_USER:-df_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # S3-compatible document storage (ID cards, certificates). MinIO no longer publishes free images on
+  # Docker Hub; this is Chainguard's maintained build. Azure Blob Storage does not speak the S3 protocol,
+  # so on Azure either run this container on persistent storage or use another S3-compatible service.
+  # The API creates its private bucket on first start.
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+    profiles: [bundled]
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-}
+    volumes:
+      - minio_data:/data
+
+volumes:
+  mysql_data:
+  minio_data:

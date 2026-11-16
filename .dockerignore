@@ -1,0 +1,16 @@
+# Never send secrets, local data or reference documents into an image.
+.env
+.env.*
+!.env.example
+Accounts.txt
+Working files/
+local/
+node_modules/
+tests/
+docs/
+deploy/
+.git/
+.github/
+*.log
+Dockerfile
+.dockerignore
