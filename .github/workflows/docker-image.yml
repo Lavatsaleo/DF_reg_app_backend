@@ -3,9 +3,9 @@
 #   push a version tag (v1.2.3) -> 19631/df-backend:1.2.3 and :prod
 # Every image is also tagged with its commit (sha-<short sha>) so a deployment can be pinned exactly.
 #
-# Repository settings needed (Settings > Secrets and variables > Actions):
-#   Variable DOCKERHUB_USERNAME  the Docker Hub account or organisation name
-#   Secret   DOCKERHUB_TOKEN     a Docker Hub personal access token with Read & Write access
+# Repository setting needed (Settings > Secrets and variables > Actions > Secrets):
+#   DOCKERHUB_TOKEN     a Docker Hub personal access token with Read & Write access
+# Optional: DOCKERHUB_USERNAME (as a variable or a secret) to publish under another account.
 name: Backend Docker image
 
 on:
@@ -17,6 +17,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME || '19631' }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,13 +30,13 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: docker.io/${{ vars.DOCKERHUB_USERNAME }}/df-backend
+          images: docker.io/${{ env.DOCKERHUB_USERNAME }}/df-backend
           tags: |
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/Test' }}
             type=semver,pattern={{version}}

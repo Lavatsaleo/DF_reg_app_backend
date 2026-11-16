@@ -34,7 +34,7 @@ Docker Hub, under the account `19631`:
 | Image | Built from |
 | --- | --- |
 | [`19631/df-backend`](https://hub.docker.com/r/19631/df-backend) | github.com/Lavatsaleo/DF_reg_app_backend |
-| [`19631/df-frontend`](https://hub.docker.com/r/19631/df-frontend) | github.com/Lavatsaleo/frontend |
+| [`19631/df-frontend`](https://hub.docker.com/r/19631/df-frontend) | github.com/Lavatsaleo/DF_reg_app_frontend |
 
 Tags:
 
@@ -86,7 +86,7 @@ The API needs outbound access to the database, the storage endpoint and the SMTP
 ## 4. Web server and routing
 
 The `web` container already contains the nginx configuration
-([`frontend/nginx/default.conf.template`](https://github.com/Lavatsaleo/frontend/blob/Test/nginx/default.conf.template)):
+([`frontend/nginx/default.conf.template`](https://github.com/Lavatsaleo/DF_reg_app_frontend/blob/Test/nginx/default.conf.template)):
 
 - `/api/*` is proxied to the API with `Host`, `X-Forwarded-For` and `X-Forwarded-Proto`. The site and API share one address, so there is no cross-origin traffic.
 - Every other path returns `index.html` (single-page app routes such as `/apply/physical-academy`, `/staff/committee`, `/reset-password/<token>`, `/participant-registration/<token>`).
