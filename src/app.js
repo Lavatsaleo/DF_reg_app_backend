@@ -39,7 +39,7 @@ app.use(cors({
     callback(null, !origin || getAllowedOrigins().includes(origin));
   },
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-  allowedHeaders: ["Authorization", "Content-Type"],
+  allowedHeaders: ["Authorization", "Content-Type", "X-Registration-Session"],
   maxAge: 600,
 }));
 app.use(securityHeaders);

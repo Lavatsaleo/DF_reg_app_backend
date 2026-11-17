@@ -16,6 +16,17 @@ const {
   getQuestionsForCountry,
 } = require("../data/participantRegistrationForm");
 const { canAccessCountry } = require("../utils/countryAccess");
+const { newSession, extendedSession, hasValidSession, maskEmail } = require("../utils/registrationSession");
+const { issueVerificationCode, verifyCode } = require("../services/verificationCode.service");
+
+const REGISTRATION_CODE_PURPOSE = "PARTICIPANT_REGISTRATION_ACCESS";
+const REGISTRATION_CODE_SUBJECT = "REGISTRATION_INVITATION";
+const CODE_REQUIRED_MESSAGE =
+  "For your security, enter the code we email you before continuing. If you were away for a while, request a new code.";
+
+function invitationEmail(invitation) {
+  return invitation.emailTo || invitation.applicant?.email || null;
+}
 
 const DRAFT_STAGES = ["consent", "form", "review"];
 const CONSENT_DRAFT_FIELDS = [
@@ -430,7 +441,102 @@ async function loadEditableInvitation(req, res) {
     return null;
   }
 
+  if (!hasValidSession(invitation, req)) {
+    res.status(401).json({ success: false, reasonCode: "REGISTRATION_CODE_REQUIRED", message: CODE_REQUIRED_MESSAGE });
+    return null;
+  }
+
+  await prisma.participantRegistrationInvitation.update({ where: { id: invitation.id }, data: extendedSession() });
   return invitation;
+}
+
+// Loads an invitation that can still be filled in, for the code endpoints. Sends the reason otherwise.
+async function loadOpenInvitationForCode(req, res) {
+  const rawToken = String(req.params.token || "").trim();
+  const invitation = rawToken ? await loadInvitation(rawToken) : null;
+  if (!invitation) {
+    res.status(404).json({ success: false, message: "This participant registration invitation could not be found." });
+    return null;
+  }
+  const effectiveStatus = getInvitationStatus(invitation);
+  if (["EXPIRED", "CANCELLED", "SUBMITTED"].includes(effectiveStatus)) {
+    res.status(410).json({
+      success: false,
+      message: effectiveStatus === "SUBMITTED"
+        ? "This participant registration form has already been submitted."
+        : "This participant registration invitation is no longer active. Please use the most recent email invitation.",
+    });
+    return null;
+  }
+  return invitation;
+}
+
+// Step 1 after opening the link: email a 6-digit code to the participant.
+async function requestRegistrationAccessCode(req, res) {
+  try {
+    const invitation = await loadOpenInvitationForCode(req, res);
+    if (!invitation) return undefined;
+
+    const email = invitationEmail(invitation);
+    const maskedEmail = maskEmail(email);
+    if (!email) {
+      return res.status(409).json({ success: false, message: "There is no email address on this invitation. Please contact the programme team." });
+    }
+
+    const result = await issueVerificationCode({
+      purpose: REGISTRATION_CODE_PURPOSE,
+      subjectType: REGISTRATION_CODE_SUBJECT,
+      subjectId: invitation.id,
+      email,
+      phone: invitation.applicant.contactNumber,
+      purposeText: "open your Digital Futures participant registration form",
+    });
+
+    if (!result.issued && result.reason === "cooldown") {
+      return res.status(429).json({ success: false, maskedEmail, message: "A code was sent less than a minute ago. Please check your email, or wait a moment and ask again." });
+    }
+    if (!result.issued && result.reason === "hourly_limit") {
+      return res.status(429).json({ success: false, maskedEmail, message: "Too many codes were requested. Please wait an hour and try again, or contact the programme team." });
+    }
+    if (!result.issued) {
+      return res.status(502).json({ success: false, maskedEmail, message: "We could not send the code. Please try again, or contact the programme team." });
+    }
+
+    return res.status(202).json({ success: true, maskedEmail, message: `We have sent a 6-digit code to ${maskedEmail}. It works for 10 minutes.` });
+  } catch (error) {
+    console.error("Request participant registration code error:", error);
+    return res.status(500).json({ success: false, message: "We could not send a code. Please try again." });
+  }
+}
+
+// Step 2: a correct code opens the form in this browser, and closes it in any other.
+async function verifyRegistrationAccessCode(req, res) {
+  try {
+    const invitation = await loadOpenInvitationForCode(req, res);
+    if (!invitation) return undefined;
+
+    const verified = await verifyCode({
+      purpose: REGISTRATION_CODE_PURPOSE,
+      subjectType: REGISTRATION_CODE_SUBJECT,
+      subjectId: invitation.id,
+      code: req.body?.code,
+    });
+    if (!verified) {
+      return res.status(400).json({ success: false, message: "That code is not right or has expired. Check the latest email, or ask for a new code." });
+    }
+
+    const session = newSession();
+    const now = new Date();
+    await prisma.participantRegistrationInvitation.update({
+      where: { id: invitation.id },
+      data: { ...session.data, status: "OPENED", openedAt: invitation.openedAt || now },
+    });
+
+    return res.json({ success: true, sessionToken: session.token });
+  } catch (error) {
+    console.error("Verify participant registration code error:", error);
+    return res.status(500).json({ success: false, message: "We could not check the code. Please try again." });
+  }
 }
 
 async function getParticipantRegistrationForm(req, res) {
@@ -478,7 +584,30 @@ async function getParticipantRegistrationForm(req, res) {
       });
     }
 
-    if (effectiveStatus !== "SUBMITTED" && invitation.status !== "OPENED") {
+    // Already submitted: nothing personal is shown from the link alone.
+    if (effectiveStatus === "SUBMITTED") {
+      return res.json({
+        success: true,
+        alreadySubmitted: true,
+        applicant: { pathway: invitation.applicant.pathway },
+        invitation: summarizeInvitation(invitation, effectiveStatus),
+        draft: null,
+        form: null,
+      });
+    }
+
+    // The link alone shows only where the code will be sent.
+    if (!hasValidSession(invitation, req)) {
+      return res.json({
+        success: true,
+        verificationRequired: true,
+        maskedEmail: maskEmail(invitationEmail(invitation)),
+        pathway: invitation.applicant.pathway,
+        invitation: summarizeInvitation(invitation, effectiveStatus),
+      });
+    }
+
+    if (invitation.status !== "OPENED") {
       await prisma.participantRegistrationInvitation.update({
         where: { id: invitation.id },
         data: {
@@ -724,6 +853,10 @@ async function submitParticipantRegistration(req, res) {
             ? "This participant registration invitation has expired."
             : "This participant registration invitation is no longer active.",
       });
+    }
+
+    if (!hasValidSession(invitation, req)) {
+      return res.status(401).json({ success: false, reasonCode: "REGISTRATION_CODE_REQUIRED", message: CODE_REQUIRED_MESSAGE });
     }
 
     if (!pathwaySupportsParticipantRegistration(invitation.applicant.pathway)) {
@@ -991,12 +1124,19 @@ async function resendParticipantRegistrationInvitation(req, res) {
       });
     }
 
-    if (applicant.status !== "PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION") {
-      await prisma.applicant.update({
-        where: { id: applicant.id },
-        data: { status: "PARTICIPANT_REGISTRATION_PENDING" },
-      });
-    }
+    // Every invitation is recorded in the participant's history, by whom and whether the email arrived.
+    const sentBy = req.user?.fullName || req.user?.email || "staff";
+    const historyNote = result.emailResult?.sent
+      ? `Participant registration invitation sent again by ${sentBy}.`
+      : `Participant registration invitation created by ${sentBy}, but the email could not be delivered.`;
+    const nextStatus = applicant.status === "PARTICIPANT_REGISTRATION_COMPLETED_PENDING_VERIFICATION"
+      ? applicant.status
+      : "PARTICIPANT_REGISTRATION_PENDING";
+
+    await prisma.$transaction([
+      prisma.applicant.update({ where: { id: applicant.id }, data: { status: nextStatus } }),
+      prisma.applicantStatusHistory.create({ data: { applicantId: applicant.id, status: nextStatus, note: historyNote } }),
+    ]);
 
     return res.json({
       success: true,
@@ -1024,4 +1164,6 @@ module.exports = {
   saveParticipantRegistrationSupportRequest,
   submitParticipantRegistration,
   resendParticipantRegistrationInvitation,
+  requestRegistrationAccessCode,
+  verifyRegistrationAccessCode,
 };

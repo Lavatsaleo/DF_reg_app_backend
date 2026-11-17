@@ -13,11 +13,13 @@ if (process.env.NODE_ENV === "production" && process.env.BOOTSTRAP_ADMIN_TOKEN) 
 }
 
 const { ensureDocumentBucket } = require("./services/storageSetup.service");
+const { scheduleDraftRetention } = require("./services/draftRetention.service");
 
 const PORT = process.env.PORT || 5000;
 
 // Runs in the background: the API starts at once, and storage problems are logged, not fatal.
 ensureDocumentBucket().catch((error) => console.warn("[storage] Bucket check failed:", error.message));
+if (process.env.NODE_ENV !== "test") scheduleDraftRetention();
 
 app.listen(PORT, () => {
   console.log(

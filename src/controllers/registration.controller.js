@@ -15,6 +15,7 @@ const {
   isActiveIdentityConflict,
 } = require("../utils/applicationIdentity");
 const { sendApplicationOutcome } = require("../services/applicationOutcome.service");
+const { createDraftToken, hashDraftToken, draftTokenMatches } = require("../utils/draftAccess");
 const { COUNTRY_DIAL_CODES } = require("../data/administrativeLocations");
 const { normalizeContactNumber, normalizeEmail } = require("../utils/normalizers");
 const { createBasicSkillsTestInvitation, sendBasicSkillsTestInvitation } = require("../services/basicSkillsTestInvitation.service");
@@ -1091,10 +1092,31 @@ async function getRegistrationFormQuestions(req, res) {
   });
 }
 
+// Which identifier a draft shares with the one being saved, in words for the applicant.
+function describeDraftMatch(draft, { normalizedEmail, normalizedContactNumber, normalizedNationalId }) {
+  const matched = [];
+  if (normalizedContactNumber && draft.normalizedContactNumber === normalizedContactNumber) matched.push("mobile number");
+  if (normalizedEmail && draft.normalizedEmail === normalizedEmail) matched.push("email address");
+  if (normalizedNationalId && draft.normalizedNationalId === normalizedNationalId) matched.push("ID number");
+  if (!matched.length) return "details";
+  return matched.length === 1 ? matched[0] : `${matched.slice(0, -1).join(", ")} and ${matched[matched.length - 1]}`;
+}
+
+const DRAFT_EXISTS_MESSAGE = (matchedOn) =>
+  `You have already started an application with this ${matchedOn}. You can apply for one pathway at a time. To continue it, go to Check status and enter the code we email you.`;
+
+const DRAFT_LOCKED_MESSAGE =
+  "For your privacy, this saved application can only be continued after you confirm it is yours. Go to Check status and enter the code we email you.";
+
+function draftError(statusCode, reasonCode, message) {
+  return Object.assign(new Error(message), { statusCode, reasonCode });
+}
+
 async function saveRegistrationDraft(req, res) {
   try {
     const answers = sanitizeDraftAnswers(req.body.answers || {});
     const draftReference = String(req.body.draftReference || "").trim().toUpperCase();
+    const draftToken = typeof req.body.draftToken === "string" ? req.body.draftToken : "";
     const pathway = normalizePathway(req.body.pathway);
     const documentType = req.body.documentType || "DISABILITY_DOCUMENT";
     const currentStep = Number.isFinite(Number(req.body.currentStep))
@@ -1108,22 +1130,30 @@ async function saveRegistrationDraft(req, res) {
     const email = answers.EMAIL || req.body.email || null;
     const normalizedContactNumber = normalizeContactNumber(contactNumber);
     const normalizedEmail = normalizeEmail(email);
+    const normalizedNationalId = normalizeNationalId(country, answers.NATIONAL_ID_NUMBER);
 
     // A saved draft is reopened with a code sent to its email, so it needs both before it is saved to the portal.
-    if (!draftReference && (!normalizedContactNumber || !normalizedEmail)) {
+    if (!normalizedContactNumber || !normalizedEmail) {
       return res.status(400).json({
         success: false,
-        message:
-          "Enter your mobile number and email address before saving to the portal. The form is still saved on this device until then.",
+        message: "Enter your mobile number and email address before saving to the portal.",
       });
     }
 
+    // Only the device holding this draft's private token may change it.
+    let existingDraft = null;
+    if (draftReference) {
+      existingDraft = await prisma.registrationDraft.findUnique({ where: { draftReference } });
+      if (!existingDraft || existingDraft.status !== "INCOMPLETE") {
+        throw draftError(409, "DRAFT_CLOSED", "This saved application has already been submitted or closed. Use Check status to follow your application.");
+      }
+      if (!draftTokenMatches(existingDraft, draftToken)) {
+        throw draftError(403, "DRAFT_LOCKED", DRAFT_LOCKED_MESSAGE);
+      }
+    }
+
     // Checked as soon as the contact details are entered, before the rest of the form is filled in.
-    const draftIdentity = {
-      normalizedEmail,
-      normalizedContactNumber,
-      normalizedNationalId: normalizeNationalId(country, answers.NATIONAL_ID_NUMBER),
-    };
+    const draftIdentity = { normalizedEmail, normalizedContactNumber, normalizedNationalId };
     const activeApplication = await findActiveApplication(prisma, draftIdentity, ACTIVE_APPLICATION_SELECT);
     if (activeApplication) {
       return res.status(409).json({
@@ -1134,91 +1164,121 @@ async function saveRegistrationDraft(req, res) {
       });
     }
 
+    // One unfinished application per person too, across all pathways.
+    const otherDraft = await prisma.registrationDraft.findFirst({
+      where: {
+        status: "INCOMPLETE",
+        ...(existingDraft ? { id: { not: existingDraft.id } } : {}),
+        OR: [
+          { normalizedContactNumber },
+          { normalizedEmail },
+          ...(normalizedNationalId ? [{ normalizedNationalId }] : []),
+        ],
+      },
+      select: { normalizedContactNumber: true, normalizedEmail: true, normalizedNationalId: true },
+    });
+    if (otherDraft) {
+      throw draftError(409, "DRAFT_EXISTS", DRAFT_EXISTS_MESSAGE(describeDraftMatch(otherDraft, draftIdentity)));
+    }
+
     const completionPercent = calculateDraftCompletionPercent(answers, pathway);
     const now = new Date();
+    const draftFields = {
+      pathway,
+      contactNumber,
+      normalizedContactNumber,
+      email,
+      normalizedEmail,
+      normalizedNationalId,
+      answers,
+      documentType,
+      currentStep,
+      completionPercent,
+      lastSavedAt: now,
+    };
 
-    const draft = await prisma.$transaction(async (tx) => {
-      let existingDraft = null;
+    let draft;
+    let newDraftToken = null;
 
-      if (draftReference) {
-        existingDraft = await tx.registrationDraft.findUnique({
-          where: { draftReference },
-        });
-      }
-
-      if (!existingDraft && normalizedContactNumber) {
-        const draftForNumber = await tx.registrationDraft.findFirst({
-          where: {
-            normalizedContactNumber,
+    if (existingDraft) {
+      draft = await prisma.registrationDraft.update({ where: { id: existingDraft.id }, data: draftFields });
+    } else {
+      newDraftToken = createDraftToken();
+      draft = await prisma.$transaction(async (tx) =>
+        tx.registrationDraft.create({
+          data: {
+            ...draftFields,
+            draftReference: await generateDraftReference(tx),
+            editTokenHash: hashDraftToken(newDraftToken),
             status: "INCOMPLETE",
           },
-          select: { id: true },
-        });
-
-        if (draftForNumber) {
-          throw Object.assign(
-            new Error("An application is already saved for this mobile number. Use Check status to get a code by email and continue it."),
-            { statusCode: 409 }
-          );
-        }
-      }
-
-      if (existingDraft) {
-        if (existingDraft.status !== "INCOMPLETE") {
-          throw Object.assign(new Error("This draft has already been submitted."), {
-            statusCode: 409,
-          });
-        }
-
-        return tx.registrationDraft.update({
-          where: { id: existingDraft.id },
-          data: {
-            pathway,
-            contactNumber,
-            normalizedContactNumber,
-            email,
-            normalizedEmail,
-            answers,
-            documentType,
-            currentStep,
-            completionPercent,
-            lastSavedAt: now,
-          },
-        });
-      }
-
-      const newDraftReference = await generateDraftReference(tx);
-
-      return tx.registrationDraft.create({
-        data: {
-          draftReference: newDraftReference,
-          pathway,
-          contactNumber,
-          normalizedContactNumber,
-          email,
-          normalizedEmail,
-          answers,
-          documentType,
-          currentStep,
-          completionPercent,
-          status: "INCOMPLETE",
-          lastSavedAt: now,
-        },
-      });
-    });
+        })
+      );
+    }
 
     return res.json({
       success: true,
       message: "Application draft saved.",
-      data: buildDraftPublicPayload(draft, { includeAnswers: false }),
+      data: {
+        ...buildDraftPublicPayload(draft, { includeAnswers: false }),
+        // Returned once, when the draft is created; the browser keeps it only for this visit.
+        ...(newDraftToken ? { draftToken: newDraftToken } : {}),
+      },
     });
   } catch (error) {
-    console.error("Save registration draft error:", error);
+    // Two saves at the same moment for the same mobile number.
+    if (error.code === "P2002") {
+      return res.status(409).json({
+        success: false,
+        reasonCode: "DRAFT_EXISTS",
+        message: DRAFT_EXISTS_MESSAGE("mobile number"),
+      });
+    }
+
+    if (!error.statusCode) console.error("Save registration draft error:", error);
 
     return res.status(error.statusCode || 500).json({
       success: false,
+      reasonCode: error.reasonCode,
       message: error.statusCode ? error.message : "Failed to save application draft.",
     });
+  }
+}
+
+// The applicant discards their unfinished application (Clear draft, or switching pathway).
+// The answers are erased and the mobile number, email and ID are freed for a new application.
+async function discardRegistrationDraft(req, res) {
+  try {
+    const draftReference = String(req.body?.draftReference || "").trim().toUpperCase();
+    const draftToken = typeof req.body?.draftToken === "string" ? req.body.draftToken : "";
+    const draft = draftReference
+      ? await prisma.registrationDraft.findUnique({ where: { draftReference } })
+      : null;
+
+    if (!draft || draft.status !== "INCOMPLETE") {
+      return res.json({ success: true, message: "There is no saved application to delete." });
+    }
+    if (!draftTokenMatches(draft, draftToken)) {
+      return res.status(403).json({ success: false, reasonCode: "DRAFT_LOCKED", message: DRAFT_LOCKED_MESSAGE });
+    }
+
+    await prisma.registrationDraft.update({
+      where: { id: draft.id },
+      data: {
+        status: "DISCARDED",
+        answers: {},
+        normalizedContactNumber: null,
+        normalizedEmail: null,
+        normalizedNationalId: null,
+        editTokenHash: null,
+        lastSavedAt: new Date(),
+      },
+    });
+
+    return res.json({ success: true, message: "Your saved application has been deleted." });
+  } catch (error) {
+    console.error("Discard registration draft error:", error);
+    return res.status(500).json({ success: false, message: "We could not delete the saved application. Please try again." });
   }
 }
 
@@ -1275,6 +1335,7 @@ async function submitRegistration(req, res) {
     }
 
     const submittedDraftReference = String(req.body.draftReference || "").trim().toUpperCase();
+    const submittedDraftToken = typeof req.body.draftToken === "string" ? req.body.draftToken : "";
 
     if (Array.isArray(parsedResponses)) {
       parsedResponses = prepareResponsesForSubmission(parsedResponses, req.body.pathway);
@@ -1334,50 +1395,16 @@ async function submitRegistration(req, res) {
     const existingApplicant = await findActiveApplication(prisma, submissionIdentity, ACTIVE_APPLICATION_SELECT);
 
     if (existingApplicant) {
-      const canTrackExistingApplication = existingApplicant.status !== "INELIGIBLE";
-
+      // Nothing about the existing application is returned: anyone can type a number into the form.
+      // The applicant follows it on Check status, after the code emailed to them.
       return res.status(409).json({
         success: false,
         duplicate: true,
-        existingApplicationOpened: true,
+        existingApplicationOpened: false,
+        hideApplicationReference: true,
+        allowStatusCheck: false,
         reasonCode: "ACTIVE_APPLICATION_EXISTS",
-        message: buildActiveApplicationMessage(describeMatch(existingApplicant, submissionIdentity), existingApplicant.pathway),
-        hideApplicationReference: !canTrackExistingApplication,
-        allowStatusCheck: canTrackExistingApplication,
-        applicationReference: canTrackExistingApplication
-          ? existingApplicant.applicationReference
-          : null,
-        participantCode: canTrackExistingApplication
-          ? existingApplicant.participantCode
-          : null,
-        status: canTrackExistingApplication ? existingApplicant.status : null,
-        pathway: existingApplicant.pathway,
-        registrationMode: existingApplicant.registrationMode,
-        screeningStatus: canTrackExistingApplication
-          ? existingApplicant.screeningStatus
-          : "NOT_ELIGIBLE",
-        submittedAt: existingApplicant.createdAt,
-        supportEmail: getSupportEmail(existingApplicant.country),
-        data: {
-          duplicate: true,
-          existingApplicationOpened: true,
-          hideApplicationReference: !canTrackExistingApplication,
-          allowStatusCheck: canTrackExistingApplication,
-          applicationReference: canTrackExistingApplication
-            ? existingApplicant.applicationReference
-            : null,
-          participantCode: canTrackExistingApplication
-            ? existingApplicant.participantCode
-            : null,
-          status: canTrackExistingApplication ? existingApplicant.status : null,
-          pathway: existingApplicant.pathway,
-          registrationMode: existingApplicant.registrationMode,
-          screeningStatus: canTrackExistingApplication
-            ? existingApplicant.screeningStatus
-            : "NOT_ELIGIBLE",
-          submittedAt: existingApplicant.createdAt,
-          supportEmail: getSupportEmail(existingApplicant.country),
-        },
+        message: buildActiveApplicationMessage(describeMatch(existingApplicant, submissionIdentity)),
       });
     }
 
@@ -1602,15 +1629,19 @@ async function submitRegistration(req, res) {
         });
       }
 
+      // Close this person's unfinished drafts (any pathway). The draft named by reference is closed only
+      // when this device holds its token, so nobody can close someone else's draft.
       const draftMatchConditions = [];
 
-      if (submittedDraftReference) {
-        draftMatchConditions.push({ draftReference: submittedDraftReference });
+      if (submittedDraftReference && submittedDraftToken) {
+        const submittedDraft = await tx.registrationDraft.findUnique({ where: { draftReference: submittedDraftReference } });
+        if (draftTokenMatches(submittedDraft, submittedDraftToken)) {
+          draftMatchConditions.push({ id: submittedDraft.id });
+        }
       }
-
-      if (normalizedContactNumber) {
-        draftMatchConditions.push({ normalizedContactNumber });
-      }
+      if (normalizedContactNumber) draftMatchConditions.push({ normalizedContactNumber });
+      if (normalizedEmail) draftMatchConditions.push({ normalizedEmail });
+      if (normalizedNationalId) draftMatchConditions.push({ normalizedNationalId });
 
       if (draftMatchConditions.length > 0) {
         await tx.registrationDraft.updateMany({
@@ -1621,6 +1652,9 @@ async function submitRegistration(req, res) {
           data: {
             status: "SUBMITTED",
             submittedApplicantId: createdApplicant.id,
+            // Frees the mobile number for a new draft if this application later ends.
+            normalizedContactNumber: null,
+            editTokenHash: null,
             lastSavedAt: new Date(),
           },
         });
@@ -2156,10 +2190,17 @@ async function verifyApplicationAccessCode(req, res) {
       return res.status(400).json({ success: false, message: ACCESS_CODE_INVALID_MESSAGE });
     }
 
-    return res.json({
-      success: true,
-      data: match.kind === "APPLICANT" ? buildApplicantStatusPayload(match.applicant) : buildDraftAccessPayload(match.draft),
+    if (match.kind === "APPLICANT") {
+      return res.json({ success: true, data: buildApplicantStatusPayload(match.applicant) });
+    }
+
+    // The code proves the email is theirs: this device gets a new token and any earlier device loses access.
+    const draftToken = createDraftToken();
+    await prisma.registrationDraft.update({
+      where: { id: match.draft.id },
+      data: { editTokenHash: hashDraftToken(draftToken) },
     });
+    return res.json({ success: true, data: { ...buildDraftAccessPayload(match.draft), draftToken } });
   } catch (error) {
     console.error("Verify application access code error:", error);
     return res.status(500).json({ success: false, message: "We could not check the code. Please try again." });
@@ -2176,6 +2217,7 @@ module.exports = {
   getRegistrationFormQuestions,
   saveRegistrationDraft,
   getRegistrationDraft,
+  discardRegistrationDraft,
   // Exported for the eligibility tests.
   calculateEligibility,
 };

@@ -488,6 +488,15 @@ model ParticipantRegistrationInvitation {
   draftDocuments Json?
   draftSavedAt   DateTime?
 
+  /*
+    The link alone does not open the form: the participant also enters a code emailed to them.
+    A correct code starts a session for that browser (only the SHA-256 is stored). A new code
+    replaces the session, so an earlier browser loses access. The session ends after
+    REGISTRATION_SESSION_IDLE_MINUTES without saving.
+  */
+  accessSessionHash      String?
+  accessSessionExpiresAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -802,9 +811,15 @@ model RegistrationDraft {
   pathway        Pathway @default(PHYSICAL_ACADEMY)
 
   contactNumber           String?
+  // Only set while the draft is INCOMPLETE, so a person can start a new draft after an application ends.
   normalizedContactNumber String? @unique
   email                   String?
   normalizedEmail         String?
+  normalizedNationalId    String?
+
+  // SHA-256 of the private token held by the device that is filling in the draft. Changing the draft
+  // needs this token; another device gets a new one only after the emailed code is verified.
+  editTokenHash String?
 
   answers           Json
   documentType      String?
@@ -819,6 +834,7 @@ model RegistrationDraft {
   updatedAt DateTime @updatedAt
 
   @@index([normalizedEmail])
+  @@index([normalizedNationalId])
   @@index([status])
   @@index([lastSavedAt])
 }

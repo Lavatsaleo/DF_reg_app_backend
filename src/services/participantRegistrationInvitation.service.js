@@ -48,7 +48,7 @@ function buildInvitationEmail({ applicant, invitationUrl, expiresAt }) {
     `This secure link expires on ${expiryText}. It is linked to your application and should not be shared with anyone else.`,
     "",
     "You will be asked to confirm your consent, answer the registration and baseline questions, and upload the required ID and education documents.",
-    "Your answers are saved as you go, so you can stop and come back later using this same link.",
+    "When you open the link, we will email you a 6-digit code to confirm it is you. Your answers are saved as you go, so you can stop and come back later using this same link and a new code.",
     "",
     "Regards,",
     "Digital Futures Registration Team",
@@ -66,7 +66,7 @@ function buildInvitationEmail({ applicant, invitationUrl, expiresAt }) {
     <p><a href="${escapeHtml(invitationUrl)}">Open participant registration form</a></p>
     <p>This secure link expires on <strong>${expiryText}</strong>. It is linked to your application and should not be shared with anyone else.</p>
     <p>You will be asked to confirm your consent, answer the registration and baseline questions, and upload the required ID and education documents.</p>
-    <p>Your answers are saved as you go, so you can stop and come back later using this same link.</p>
+    <p>When you open the link, we will email you a 6-digit code to confirm it is you. Your answers are saved as you go, so you can stop and come back later using this same link and a new code.</p>
     <p>Regards,<br />Digital Futures Registration Team</p>
   `;
 

@@ -360,7 +360,39 @@ async function getParticipantProfile(req, res) {
 
     const assignment = applicant.committeeAssignments[0] || null;
 
+    // Consent and the start of the application, for the participant's activity timeline.
+    const answerOf = (code) => {
+      const response = applicant.responses.find((item) => item.questionCode === code);
+      return response ? response.valueText ?? (Array.isArray(response.valueJson) ? response.valueJson.join(", ") : null) : null;
+    };
+    const startedDraft = await prisma.registrationDraft.findFirst({
+      where: { submittedApplicantId: applicant.id },
+      orderBy: { createdAt: "asc" },
+      select: { createdAt: true },
+    });
+    const registrationConsentDecision = answerOf("PR_CONSENT_DECISION");
+    const tracking = {
+      applicationStartedAt: startedDraft?.createdAt || null,
+      applicationConsent: applicant.consentedAt
+        ? {
+            signedAt: applicant.consentedAt,
+            version: answerOf("CONSENT_VERSION"),
+            signatureMethod: answerOf("CONSENT_SIGNATURE_METHOD"),
+            assisted: answerOf("CONSENT_COMPLETED_SELF") === "No",
+          }
+        : null,
+      registrationConsent: registrationConsentDecision
+        ? {
+            decision: registrationConsentDecision,
+            signedAt: registrationInvite?.submittedAt || answerOf("PR_CONSENT_SIGNED_DATE"),
+            version: answerOf("PR_CONSENT_VERSION"),
+            assisted: answerOf("PR_CONSENT_COMPLETED_SELF") === "No",
+          }
+        : null,
+    };
+
     return res.json({
+      tracking,
       success: true,
       identity: identityVisible ? { hidden: false } : { hidden: true, message: IDENTITY_HIDDEN_MESSAGE, documentCount: applicant.documents.length },
       participant: {

@@ -9,11 +9,17 @@ const {
   saveParticipantRegistrationSupportRequest,
   submitParticipantRegistration,
   resendParticipantRegistrationInvitation,
+  requestRegistrationAccessCode,
+  verifyRegistrationAccessCode,
 } = require("../controllers/participantRegistration.controller");
 
 const router = express.Router();
 
 router.get("/invite/:token", rateLimits.invitation, getParticipantRegistrationForm);
+
+// The link alone does not open the form: a code is emailed to the participant first.
+router.post("/invite/:token/request-code", rateLimits.verificationCodeRequest, requestRegistrationAccessCode);
+router.post("/invite/:token/verify", rateLimits.verificationCodeVerify, verifyRegistrationAccessCode);
 
 router.put("/invite/:token/draft", rateLimits.invitation, saveParticipantRegistrationDraft);
 

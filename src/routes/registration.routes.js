@@ -11,6 +11,7 @@ const {
   getRegistrationFormQuestions,
   saveRegistrationDraft,
   getRegistrationDraft,
+  discardRegistrationDraft,
   requestApplicationAccessCode,
   verifyApplicationAccessCode,
 } = require("../controllers/registration.controller");
@@ -20,6 +21,7 @@ const router = express.Router();
 router.get("/form/questions", getRegistrationFormQuestions);
 
 router.post("/drafts", rateLimits.draftSave, saveRegistrationDraft);
+router.post("/drafts/discard", rateLimits.draftSave, discardRegistrationDraft);
 router.get("/drafts/:draftReference", rateLimits.publicLookup, getRegistrationDraft);
 
 router.post(
