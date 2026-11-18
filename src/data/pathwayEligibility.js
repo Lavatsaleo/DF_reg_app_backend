@@ -30,12 +30,14 @@ const PATHWAY_ELIGIBILITY = {
     Ghana: { minAge: 18, maxAge: 33, education: BACHELOR_OR_HIGHER },
     Kenya: { minAge: 18, maxAge: 33, education: BACHELOR_OR_HIGHER },
     Nigeria: { minAge: 18, maxAge: 33, education: HND_OR_HIGHER },
+    Zambia: { minAge: 18, maxAge: 33, education: BACHELOR_OR_HIGHER },
   },
   VIRTUAL_ACADEMY: {
     default: { minAge: 18, maxAge: 33, education: DIPLOMA_OR_HIGHER },
     Ghana: { minAge: 18, maxAge: 33, education: DIPLOMA_OR_HIGHER },
     Kenya: { minAge: 18, maxAge: 33, education: DIPLOMA_OR_HIGHER },
     Nigeria: { minAge: 18, maxAge: 33, education: DIPLOMA_OR_HIGHER },
+    Zambia: { minAge: 18, maxAge: 33, education: DIPLOMA_OR_HIGHER },
   },
   DIGITAL_ENTREPRENEURSHIP: {
     default: { minAge: 18, maxAge: 45, education: null },
@@ -50,6 +52,8 @@ const PATHWAY_ELIGIBILITY = {
       locationLabel: "Nairobi and its environs",
     },
     Nigeria: { minAge: 18, maxAge: 45, education: SENIOR_SECONDARY_OR_HIGHER },
+    // A diploma is the minimum in Zambia (Web page prompts for Zambia, November 2026).
+    Zambia: { minAge: 18, maxAge: 45, education: DIPLOMA_OR_HIGHER },
   },
 };
 
