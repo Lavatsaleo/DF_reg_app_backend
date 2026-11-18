@@ -66,6 +66,21 @@ function canUserAccessAssignment(req, assignment) {
   return assignment?.committeeMemberId && assignment.committeeMemberId === getUserCommitteeMemberId(req);
 }
 
+// Committee screens may only create, change or reset logins that are committee logins. Any other staff
+// account (an admin, a country admin, a dashboard viewer) is managed on the Staff users screen by a
+// super admin, so a committee profile can never be used to take one over.
+const COMMITTEE_LOGIN_ROLES = ["COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER"];
+
+function isCommitteeLogin(user) {
+  return COMMITTEE_LOGIN_ROLES.includes(user?.role);
+}
+
+function forbidden(message) {
+  const err = new Error(message);
+  err.statusCode = 403;
+  return err;
+}
+
 function requireLinkedCommitteeMember(req, res) {
   if (!isCommitteeMemberUser(req)) return true;
 
@@ -628,6 +643,10 @@ async function createCommitteeMemberLogin(req, res) {
       const role = member.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
       const existingLinkedUser = member.staffUsers.find((user) => user.isActive);
 
+      if (existingLinkedUser && !isCommitteeLogin(existingLinkedUser)) {
+        throw forbidden("This person already has a staff account that is not a committee login. A super admin can manage it on the Staff users screen.");
+      }
+
       if (existingLinkedUser) {
         const updatedUser = await tx.staffUser.update({
           where: { id: existingLinkedUser.id },
@@ -651,6 +670,16 @@ async function createCommitteeMemberLogin(req, res) {
       const existingUserByEmail = await tx.staffUser.findUnique({
         where: { email: member.email },
       });
+
+      // An existing account with the same email is only linked when it is an unlinked committee login
+      // in the same country; anything else would hand its password to whoever typed the email.
+      if (existingUserByEmail) {
+        const sameCountry = normalizeCountry(existingUserByEmail.country) === normalizeCountry(member.country);
+        const linkedElsewhere = existingUserByEmail.committeeMemberId && existingUserByEmail.committeeMemberId !== member.id;
+        if (!isCommitteeLogin(existingUserByEmail) || linkedElsewhere || !sameCountry) {
+          throw forbidden("A staff account with this email address already exists. A super admin can link or manage it on the Staff users screen.");
+        }
+      }
 
       if (existingUserByEmail) {
         const updatedUser = await tx.staffUser.update({
@@ -726,6 +755,12 @@ async function sendCommitteeMemberPasswordReset(req, res) {
     }
 
     const staffUser = member.staffUsers.find((user) => user.isActive);
+    if (staffUser && !isCommitteeLogin(staffUser)) {
+      return res.status(403).json({
+        success: false,
+        message: "This person's staff account is not a committee login. A super admin can send a reset link from the Staff users screen.",
+      });
+    }
     if (!staffUser) {
       return res.status(400).json({
         success: false,
@@ -826,12 +861,19 @@ async function updateCommitteeMember(req, res) {
 
       const linkedRole = updatedMember.role === "CHAIRPERSON" ? "COMMITTEE_CHAIRPERSON" : "COMMITTEE_MEMBER";
       if (updatedMember.staffUsers?.length) {
+        // Only committee logins follow the profile; other staff accounts keep their role and country.
+        // A changed role or country also signs the person out, so the new access applies at once.
         await tx.staffUser.updateMany({
-          where: { committeeMemberId: updatedMember.id },
+          where: { committeeMemberId: updatedMember.id, role: { in: COMMITTEE_LOGIN_ROLES } },
           data: {
             fullName: updatedMember.fullName,
             role: linkedRole,
             country: updatedMember.country || null,
+            // A member who is made inactive can no longer sign in.
+            ...(data.isActive === false ? { isActive: false } : {}),
+            ...(data.role !== undefined || data.country !== undefined || data.isActive === false
+              ? { tokenVersion: { increment: 1 } }
+              : {}),
           },
         });
       }

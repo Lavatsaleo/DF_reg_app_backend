@@ -1,5 +1,6 @@
 const prisma = require("../config/prisma");
 const { uploadDocument, detectFileType, normalizeDocumentType } = require("../services/fileUpload.service");
+const { createRateLimiter } = require("../middleware/security.middleware");
 const registrationFormQuestions = require("../data/registrationFormQuestions");
 const {
   getApplicationQuestionsForPathway,
@@ -145,6 +146,51 @@ function prepareResponsesForSubmission(responses = [], pathway) {
   }
 
   return preparedResponses;
+}
+
+/*
+ * The submit endpoint is public, so the answers are bounded before anything else looks at them:
+ * at most 400 answers, one per question code, codes in the expected format, plain values only,
+ * and text cut to a sensible length (drawn signatures are the longest answers).
+ */
+const SUBMITTED_RESPONSE_TYPES = new Set([
+  "TEXT", "LONG_TEXT", "SINGLE_SELECT", "MULTI_SELECT", "BOOLEAN", "NUMBER", "DATE", "PHONE", "EMAIL", "FILE",
+]);
+
+function boundAnswer(answer) {
+  if (answer === null || answer === undefined) return answer;
+  if (typeof answer === "string") return answer.slice(0, 70000);
+  if (typeof answer === "number") return Number.isFinite(answer) ? answer : null;
+  if (typeof answer === "boolean") return answer;
+  if (Array.isArray(answer)) {
+    return answer
+      .filter((item) => ["string", "number", "boolean"].includes(typeof item))
+      .slice(0, 50)
+      .map((item) => String(item).slice(0, 500));
+  }
+  return undefined;
+}
+
+function boundSubmittedResponses(responses) {
+  const seen = new Set();
+  const bounded = [];
+  for (const response of responses.slice(0, 400)) {
+    if (!response || typeof response !== "object" || Array.isArray(response)) continue;
+    const questionCode = typeof response.questionCode === "string" ? response.questionCode.trim() : "";
+    if (!/^[A-Z0-9_]{1,80}$/i.test(questionCode) || seen.has(questionCode)) continue;
+    const answer = boundAnswer(response.answer);
+    if (answer === undefined) continue;
+    seen.add(questionCode);
+    const responseType = String(response.responseType || "").toUpperCase();
+    bounded.push({
+      questionCode,
+      answer,
+      ...(typeof response.questionText === "string" ? { questionText: response.questionText.slice(0, 500) } : {}),
+      ...(typeof response.section === "string" ? { section: response.section.slice(0, 200) } : {}),
+      ...(SUBMITTED_RESPONSE_TYPES.has(responseType) ? { responseType } : {}),
+    });
+  }
+  return bounded;
 }
 
 function getAnswerValue(responses, code) {
@@ -526,7 +572,7 @@ function sanitizeDraftAnswers(value) {
 
   // Public endpoint: bound the number and size of answers so a draft can't be used to store junk.
   return Object.entries(value).slice(0, 300).reduce((accumulator, [key, answer]) => {
-    if (answer === undefined || !/^[A-Z0-9_]{1,80}$/i.test(key)) return accumulator;
+    if (answer === undefined || !/^[A-Z0-9_]{1,80}$/i.test(key) || key.startsWith("__")) return accumulator;
 
     if (typeof answer === "string") {
       // Signatures are the longest answers (drawn path data).
@@ -548,7 +594,7 @@ function sanitizeDraftAnswers(value) {
     }
 
     return accumulator;
-  }, {});
+  }, Object.create(null));
 }
 
 function buildResponsesFromAnswerObject(answers = {}) {
@@ -1108,6 +1154,25 @@ const DRAFT_EXISTS_MESSAGE = (matchedOn) =>
 const DRAFT_LOCKED_MESSAGE =
   "For your privacy, this saved application can only be continued after you confirm it is yours. Go to Check status and enter the code we email you.";
 
+/*
+ * The "you have already applied" notice tells an applicant early that their details are in use. The
+ * same notice would tell anyone typing in other people's numbers or emails who has applied, so each
+ * address gets only a few of these notices; real applicants rarely see more than one.
+ */
+const duplicateNoticeLimiter = createRateLimiter({
+  name: "duplicate-notice",
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: "Too many attempts. Please wait an hour and try again, or use Check status.",
+});
+
+function duplicateNoticeLimitReached(req, res) {
+  let blocked = false;
+  duplicateNoticeLimiter(req, res, () => {});
+  if (res.headersSent) blocked = true;
+  return blocked;
+}
+
 function draftError(statusCode, reasonCode, message) {
   return Object.assign(new Error(message), { statusCode, reasonCode });
 }
@@ -1118,16 +1183,17 @@ async function saveRegistrationDraft(req, res) {
     const draftReference = String(req.body.draftReference || "").trim().toUpperCase();
     const draftToken = typeof req.body.draftToken === "string" ? req.body.draftToken : "";
     const pathway = normalizePathway(req.body.pathway);
-    const documentType = req.body.documentType || "DISABILITY_DOCUMENT";
+    const documentType = normalizeDocumentType(req.body.documentType || "DISABILITY_DOCUMENT");
     const currentStep = Number.isFinite(Number(req.body.currentStep))
-      ? Math.max(0, Number(req.body.currentStep))
+      ? Math.min(100, Math.max(0, Math.trunc(Number(req.body.currentStep))))
       : 0;
 
-    const country = answers.COUNTRY || req.body.country || null;
+    const boundedText = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : null) || null;
+    const country = boundedText(answers.COUNTRY || req.body.country, 60);
     const contactNumber = answers.CONTACT_NUMBER
-      ? normalizePhoneNumberForCountry(answers.CONTACT_NUMBER, country)
-      : req.body.contactNumber || null;
-    const email = answers.EMAIL || req.body.email || null;
+      ? normalizePhoneNumberForCountry(boundedText(String(answers.CONTACT_NUMBER), 30), country)
+      : boundedText(req.body.contactNumber, 30);
+    const email = boundedText(answers.EMAIL || req.body.email, 254);
     const normalizedContactNumber = normalizeContactNumber(contactNumber);
     const normalizedEmail = normalizeEmail(email);
     const normalizedNationalId = normalizeNationalId(country, answers.NATIONAL_ID_NUMBER);
@@ -1156,6 +1222,7 @@ async function saveRegistrationDraft(req, res) {
     const draftIdentity = { normalizedEmail, normalizedContactNumber, normalizedNationalId };
     const activeApplication = await findActiveApplication(prisma, draftIdentity, ACTIVE_APPLICATION_SELECT);
     if (activeApplication) {
+      if (duplicateNoticeLimitReached(req, res)) return undefined;
       return res.status(409).json({
         success: false,
         reasonCode: "APPLICATION_EXISTS",
@@ -1178,6 +1245,7 @@ async function saveRegistrationDraft(req, res) {
       select: { normalizedContactNumber: true, normalizedEmail: true, normalizedNationalId: true },
     });
     if (otherDraft) {
+      if (duplicateNoticeLimitReached(req, res)) return undefined;
       throw draftError(409, "DRAFT_EXISTS", DRAFT_EXISTS_MESSAGE(describeDraftMatch(otherDraft, draftIdentity)));
     }
 
@@ -1282,35 +1350,6 @@ async function discardRegistrationDraft(req, res) {
   }
 }
 
-async function getRegistrationDraft(req, res) {
-  try {
-    const draftReference = String(req.params.draftReference || "").trim().toUpperCase();
-
-    const draft = await prisma.registrationDraft.findUnique({
-      where: { draftReference },
-    });
-
-    if (!draft || draft.status !== "INCOMPLETE") {
-      return res.status(404).json({
-        success: false,
-        message: "No incomplete application draft was found.",
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: buildDraftPublicPayload(draft, { includeAnswers: false }),
-    });
-  } catch (error) {
-    console.error("Get registration draft error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch application draft.",
-    });
-  }
-}
-
 async function submitRegistration(req, res) {
   try {
     const { responses } = req.body;
@@ -1338,7 +1377,7 @@ async function submitRegistration(req, res) {
     const submittedDraftToken = typeof req.body.draftToken === "string" ? req.body.draftToken : "";
 
     if (Array.isArray(parsedResponses)) {
-      parsedResponses = prepareResponsesForSubmission(parsedResponses, req.body.pathway);
+      parsedResponses = prepareResponsesForSubmission(boundSubmittedResponses(parsedResponses), req.body.pathway);
     }
 
     if (!Array.isArray(parsedResponses) || parsedResponses.length === 0) {
@@ -2119,7 +2158,8 @@ function buildApplicantStatusPayload(applicant) {
           submittedAt: latestAttempt.submittedAt,
         }
       : { submitted: false },
-    timeline: applicant.statusHistory.map((item) => ({ status: item.status, note: item.note, date: item.createdAt })),
+    // Staff notes (who sent what, scores, internal detail) stay inside the staff screens.
+    timeline: applicant.statusHistory.map((item) => ({ status: item.status, date: item.createdAt })),
     nextStepMessage: getNextStepMessage(applicant.status, applicant.pathway, applicant.screeningStatus),
     supportEmail: getSupportEmail(applicant.country),
   };
@@ -2216,7 +2256,6 @@ module.exports = {
   verifyApplicationAccessCode,
   getRegistrationFormQuestions,
   saveRegistrationDraft,
-  getRegistrationDraft,
   discardRegistrationDraft,
   // Exported for the eligibility tests.
   calculateEligibility,

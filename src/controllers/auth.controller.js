@@ -17,7 +17,7 @@ const { COUNTRIES, normalizeCountry, getUserCountry, getApplicantCountryFilter }
 const ALLOWED_ROLES = ["ADMIN", "COUNTRY_ADMIN", "COMMITTEE_CHAIRPERSON", "COMMITTEE_MEMBER", "VIEWER"];
 
 function toSafeString(value) {
-  return String(value || "").trim();
+  return String(value || "").trim().slice(0, 300);
 }
 
 function normalizeStaffRole(value) {
@@ -183,6 +183,38 @@ async function fetchJson(url, options = {}) {
   return body;
 }
 
+// Failed sign-ins per account, from any address. Kept in memory, like the other rate limits.
+const ACCOUNT_LOCK_WINDOW_MS = 15 * 60 * 1000;
+const ACCOUNT_LOCK_FAILURES = 10;
+const failedLogins = new Map();
+
+function isAccountLocked(email) {
+  const entry = failedLogins.get(email);
+  if (!entry) return false;
+  if (entry.resetAt <= Date.now()) {
+    failedLogins.delete(email);
+    return false;
+  }
+  return entry.count >= ACCOUNT_LOCK_FAILURES;
+}
+
+function recordFailedLogin(email) {
+  if (!email) return;
+  const now = Date.now();
+  const entry = failedLogins.get(email);
+  if (!entry || entry.resetAt <= now) {
+    // Bounded: an attacker trying many made-up emails can't grow this without limit.
+    if (failedLogins.size > 50000) failedLogins.clear();
+    failedLogins.set(email, { count: 1, resetAt: now + ACCOUNT_LOCK_WINDOW_MS });
+    return;
+  }
+  entry.count += 1;
+}
+
+function clearFailedLogins(email) {
+  failedLogins.delete(email);
+}
+
 async function bootstrapAdmin(req, res) {
   try {
     // Creating the first admin needs a setup token from the server environment, so nobody can claim
@@ -253,6 +285,14 @@ async function login(req, res) {
       });
     }
 
+    // Many addresses guessing one account (a botnet) are stopped here; each address is limited by the route.
+    if (isAccountLocked(email)) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many sign-in attempts for this account. Please wait 15 minutes, or reset your password.",
+      });
+    }
+
     const user = await prisma.staffUser.findUnique({
       where: { email },
       include: { committeeMember: true },
@@ -263,6 +303,7 @@ async function login(req, res) {
       : verifyPasswordAgainstNothing(password);
 
     if (!user || !user.isActive || !passwordMatches) {
+      recordFailedLogin(email);
       console.warn("[auth] failed staff sign in", { ip: getRequestIp(req) });
       return res.status(401).json({
         success: false,
@@ -270,6 +311,7 @@ async function login(req, res) {
       });
     }
 
+    clearFailedLogins(email);
     const updatedUser = await prisma.staffUser.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
@@ -388,20 +430,26 @@ async function completePasswordReset(req, res) {
       });
     }
 
-    await prisma.$transaction([
-      prisma.staffUser.update({
+    // The link is used up first, and only if nobody used it a moment earlier: one link sets one password.
+    const linkUsed = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: resetToken.id, usedAt: null, expiresAt: { gt: new Date() } },
+        data: { usedAt: new Date() },
+      });
+      if (claimed.count !== 1) return false;
+      await tx.staffUser.update({
         where: { id: resetToken.staffUserId },
         data: {
           passwordHash: hashPassword(password),
           lastPasswordResetAt: new Date(),
           tokenVersion: { increment: 1 },
         },
-      }),
-      prisma.passwordResetToken.update({
-        where: { id: resetToken.id },
-        data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+      return true;
+    });
+    if (!linkUsed) {
+      return res.status(400).json({ success: false, message: "This password reset link is invalid or has expired." });
+    }
 
     return res.json({
       success: true,
@@ -517,6 +565,10 @@ async function ssoCallback(req, res) {
       profile = decodeJwtPayload(tokenResponse.id_token);
     }
 
+    // Only an address the organisation has confirmed may match a staff account.
+    if (profile?.email_verified === false || profile?.email_verified === "false") {
+      return redirectSsoError(res, "Your organisation account email address is not verified.");
+    }
     const email = normalizeEmail(profile?.email || profile?.preferred_username || profile?.upn);
     const subject = toSafeString(profile?.sub || profile?.oid || profile?.id);
     const fullName = toSafeString(profile?.name || [profile?.given_name, profile?.family_name].filter(Boolean).join(" ")) || email;
@@ -538,6 +590,12 @@ async function ssoCallback(req, res) {
       },
       include: { committeeMember: true },
     });
+
+    // An account already tied to one organisation identity can't be claimed by another one with the same email.
+    if (user?.externalSubject && user.externalSubject !== subject) {
+      console.warn("[auth] SSO subject does not match the linked staff account", { userId: user.id });
+      return redirectSsoError(res, "This organisation account is not the one linked to your staff account. Contact an administrator.");
+    }
 
     if (!user) {
       const canAutoCreate = String(process.env.SSO_AUTO_CREATE_USERS || "false").toLowerCase() === "true";

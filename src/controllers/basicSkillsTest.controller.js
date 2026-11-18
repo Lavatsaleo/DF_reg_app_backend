@@ -422,6 +422,15 @@ async function createSubmittedAttempt({ applicant, invitation, submittedAnswers,
       };
     }
 
+    // Claim the attempt in one conditional update: of two submissions sent together, only one is scored.
+    const claimed = await tx.basicSkillsTestAttempt.updateMany({
+      where: { id: attempt.id, status: { not: "SUBMITTED" } },
+      data: { status: "SUBMITTED" },
+    });
+    if (claimed.count !== 1) {
+      return { duplicate: true, attempt: currentAttempt, assignment: null };
+    }
+
     await tx.basicSkillsTestAnswer.deleteMany({
       where: { attemptId: attempt.id },
     });
@@ -503,8 +512,10 @@ async function submitBasicSkillsTest(req, res) {
   try {
     const reference = normalizeReference(req.params.reference);
     const submittedAnswers = req.body.answers;
-    const durationSeconds = req.body.durationSeconds
-      ? Number(req.body.durationSeconds)
+    const rawDuration = Number(req.body.durationSeconds);
+    // Reported by the browser, so only kept when it is a sensible number (up to one day).
+    const durationSeconds = Number.isFinite(rawDuration) && rawDuration > 0
+      ? Math.min(Math.round(rawDuration), 24 * 60 * 60)
       : null;
 
     if (!reference) {
@@ -586,8 +597,10 @@ async function submitInvitationBasicSkillsTest(req, res) {
   try {
     const token = req.params.token;
     const submittedAnswers = req.body.answers;
-    const durationSeconds = req.body.durationSeconds
-      ? Number(req.body.durationSeconds)
+    const rawDuration = Number(req.body.durationSeconds);
+    // Reported by the browser, so only kept when it is a sensible number (up to one day).
+    const durationSeconds = Number.isFinite(rawDuration) && rawDuration > 0
+      ? Math.min(Math.round(rawDuration), 24 * 60 * 60)
       : null;
 
     const tokenCheck = await validateInvitationToken(token);

@@ -4,7 +4,9 @@
   - 6 digits, valid for 10 minutes, usable once.
   - Only an HMAC of the code is stored, bound to its purpose and subject.
   - 5 wrong guesses lock the code; a new one must be requested.
-  - A new code can be requested after 60 seconds, at most 5 per hour per application.
+  - A new code can be requested after 60 seconds, at most 5 per hour and 10 per day per application,
+    so at most 50 guesses a day can be made against one application.
+  - Each guess is counted before it is checked, so guesses sent in parallel can't get round the limit.
 */
 const crypto = require("crypto");
 const prisma = require("../config/prisma");
@@ -14,6 +16,8 @@ const CODE_TTL_MINUTES = 10;
 const MAX_ATTEMPTS = 5;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const MAX_CODES_PER_HOUR = 5;
+const MAX_CODES_PER_DAY = 10;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function getSecret() {
   const secret = process.env.OTP_SECRET || process.env.AUTH_TOKEN_SECRET || process.env.JWT_SECRET;
@@ -45,7 +49,7 @@ function normalizeSubmittedCode(value) {
 async function issueVerificationCode({ purpose, subjectType, subjectId, email, phone, purposeText }) {
   const now = Date.now();
   const recent = await prisma.verificationCode.findMany({
-    where: { purpose, subjectType, subjectId, createdAt: { gte: new Date(now - 60 * 60 * 1000) } },
+    where: { purpose, subjectType, subjectId, createdAt: { gte: new Date(now - DAY_MS) } },
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
@@ -53,7 +57,8 @@ async function issueVerificationCode({ purpose, subjectType, subjectId, email, p
   if (recent[0] && now - new Date(recent[0].createdAt).getTime() < RESEND_COOLDOWN_MS) {
     return { issued: false, reason: "cooldown" };
   }
-  if (recent.length >= MAX_CODES_PER_HOUR) {
+  const lastHour = recent.filter((item) => now - new Date(item.createdAt).getTime() < 60 * 60 * 1000);
+  if (lastHour.length >= MAX_CODES_PER_HOUR || recent.length >= MAX_CODES_PER_DAY) {
     return { issued: false, reason: "hourly_limit" };
   }
 
@@ -115,17 +120,18 @@ async function verifyCode({ purpose, subjectType, subjectId, code }) {
   });
   if (!record || record.attempts >= MAX_ATTEMPTS) return false;
 
+  // Count the guess first, and only while the limit has not been reached: of many guesses sent at
+  // the same moment, only the first MAX_ATTEMPTS are checked at all.
+  const counted = await prisma.verificationCode.updateMany({
+    where: { id: record.id, consumedAt: null, attempts: { lt: MAX_ATTEMPTS } },
+    data: { attempts: { increment: 1 } },
+  });
+  if (counted.count !== 1) return false;
+
   const expected = Buffer.from(record.codeHash, "hex");
   const actual = Buffer.from(hashCode({ purpose, subjectType, subjectId, code: submitted }), "hex");
   const matches = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-
-  if (!matches) {
-    await prisma.verificationCode.update({
-      where: { id: record.id },
-      data: { attempts: { increment: 1 } },
-    });
-    return false;
-  }
+  if (!matches) return false;
 
   // Conditional update so two simultaneous requests can't both use the same code.
   const used = await prisma.verificationCode.updateMany({
