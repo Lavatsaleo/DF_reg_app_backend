@@ -14,11 +14,29 @@ function isApplicationEnded(status) {
   return APPLICATION_ENDED_STATUSES.includes(status);
 }
 
+// The runs people type as placeholders: "123456…", "0123456…" and "987654…".
+const PLACEHOLDER_RUNS = ["12345678901234567890", "01234567890123456789", "98765432109876543210"];
+
+/*
+ * Whether an ID number is specific enough to identify one person. Every national ID, NRC, Ghana Card,
+ * NIN and passport in the programme countries has at least 6 digits. Placeholders typed by people
+ * without an ID to hand ("NONE", "0000", "11111111", "12345678") are not: matching on them would treat
+ * unrelated applicants as one person, block their applications and close their saved drafts.
+ * Such IDs are simply not used for matching; mobile number and email still are.
+ */
+function isDistinctiveIdNumber(cleanId) {
+  const digits = String(cleanId || "").replace(/\D/g, "");
+  if (digits.length < 6) return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+  if (PLACEHOLDER_RUNS.some((run) => run.startsWith(digits))) return false;
+  return true;
+}
+
 // "KENYA:12345678": the same number in two countries is two different documents.
 function normalizeNationalId(country, idNumber) {
   const cleanCountry = String(country || "").trim().toUpperCase();
   const cleanId = String(idNumber || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  if (!cleanCountry || cleanId.length < 4) return null;
+  if (!cleanCountry || !isDistinctiveIdNumber(cleanId)) return null;
   return `${cleanCountry}:${cleanId}`;
 }
 
@@ -68,6 +86,7 @@ module.exports = {
   APPLICATION_ENDED_STATUSES,
   RELEASE_ACTIVE_IDENTITY,
   isApplicationEnded,
+  isDistinctiveIdNumber,
   normalizeNationalId,
   buildActiveIdentityKeys,
   findActiveApplication,

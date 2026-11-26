@@ -307,6 +307,8 @@ function isValidNationalId(value, responses = []) {
 
   if (country === "Nigeria") return /^\d{11}$/.test(clean);
   if (country === "Ghana") return /^GHA-[A-Za-z0-9-]{11}$/.test(clean);
+  // Kenya ID, Zambia NRC and passports all have at least 6 digits; this refuses "NONE", "N/A" or "0000".
+  if (country === "Kenya" || country === "Zambia") return isValidIdentification(clean) && clean.replace(/\D/g, "").length >= 6;
   return isValidIdentification(clean);
 }
 
@@ -440,7 +442,9 @@ function validateQuestionFormats(responses = [], questions = registrationFormQue
         questionText: question.questionText,
         message: getAnswerValue(responses, "COUNTRY") === "Nigeria"
           ? "Your National Identification Number (NIN) must be exactly 11 digits."
-          : `${question.questionText} does not match the identification format stated in the application form.`,
+          : ["Kenya", "Zambia"].includes(getAnswerValue(responses, "COUNTRY"))
+            ? "Enter your ID or passport number exactly as printed. It must include at least 6 digits."
+            : `${question.questionText} does not match the identification format stated in the application form.`,
       });
     }
 
@@ -1219,7 +1223,15 @@ async function saveRegistrationDraft(req, res) {
     }
 
     // Checked as soon as the contact details are entered, before the rest of the form is filled in.
-    const draftIdentity = { normalizedEmail, normalizedContactNumber, normalizedNationalId };
+    // Only complete details are compared: while the mobile number is still being typed it can match nobody,
+    // and an ID that is not yet valid for the country is left out (it is rechecked on every save).
+    const phoneIsComplete = isValidCountryPhone(contactNumber, country);
+    const idIsComplete = isValidNationalId(answers.NATIONAL_ID_NUMBER, [{ questionCode: "COUNTRY", answer: country }]);
+    const draftIdentity = {
+      normalizedEmail,
+      normalizedContactNumber: phoneIsComplete ? normalizedContactNumber : null,
+      normalizedNationalId: idIsComplete ? normalizedNationalId : null,
+    };
     const activeApplication = await findActiveApplication(prisma, draftIdentity, ACTIVE_APPLICATION_SELECT);
     if (activeApplication) {
       if (duplicateNoticeLimitReached(req, res)) return undefined;
@@ -1237,9 +1249,9 @@ async function saveRegistrationDraft(req, res) {
         status: "INCOMPLETE",
         ...(existingDraft ? { id: { not: existingDraft.id } } : {}),
         OR: [
-          { normalizedContactNumber },
+          ...(draftIdentity.normalizedContactNumber ? [{ normalizedContactNumber: draftIdentity.normalizedContactNumber }] : []),
           { normalizedEmail },
-          ...(normalizedNationalId ? [{ normalizedNationalId }] : []),
+          ...(draftIdentity.normalizedNationalId ? [{ normalizedNationalId: draftIdentity.normalizedNationalId }] : []),
         ],
       },
       select: { normalizedContactNumber: true, normalizedEmail: true, normalizedNationalId: true },
@@ -1254,10 +1266,11 @@ async function saveRegistrationDraft(req, res) {
     const draftFields = {
       pathway,
       contactNumber,
-      normalizedContactNumber,
+      // Unique per draft: only a complete number is stored, so two people part-way through typing never clash.
+      normalizedContactNumber: draftIdentity.normalizedContactNumber,
       email,
       normalizedEmail,
-      normalizedNationalId,
+      normalizedNationalId: draftIdentity.normalizedNationalId,
       answers,
       documentType,
       currentStep,

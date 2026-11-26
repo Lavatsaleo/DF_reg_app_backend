@@ -4,10 +4,20 @@ const { normalizeNationalId, buildActiveIdentityKeys, isApplicationEnded } = req
 const { validateNotSelectedReason, buildOutcomeEmail } = require('../src/services/applicationOutcome.service');
 
 test('national IDs ignore spacing and punctuation, and are per country', () => {
-  assert.equal(normalizeNationalId('Kenya', ' 1234 5678 '), 'KENYA:12345678');
-  assert.equal(normalizeNationalId('Ghana', 'gha-123456789-0'), 'GHANA:GHA1234567890');
-  assert.notEqual(normalizeNationalId('Kenya', '12345678'), normalizeNationalId('Zambia', '12345678'));
+  assert.equal(normalizeNationalId('Kenya', ' 3245 6781 '), 'KENYA:32456781');
+  assert.equal(normalizeNationalId('Ghana', 'gha-723456789-1'), 'GHANA:GHA7234567891');
+  assert.equal(normalizeNationalId('Zambia', '284519/61/1'), 'ZAMBIA:284519611');
+  assert.notEqual(normalizeNationalId('Kenya', '32456781'), normalizeNationalId('Zambia', '32456781'));
   assert.equal(normalizeNationalId('Kenya', ''), null);
+});
+
+test('placeholder IDs are never used to match two applicants as one person', () => {
+  for (const placeholder of ['NONE', 'N/A', 'NIL', '0000', '12345', '11111111', '00000000', '12345678', '0123456789', '987654', 'GHA-000000000-0']) {
+    assert.equal(normalizeNationalId('Kenya', placeholder), null, placeholder);
+  }
+  // Real numbers that merely contain a run of digits still match.
+  assert.equal(normalizeNationalId('Kenya', 'A2345678'), 'KENYA:A2345678');
+  assert.equal(normalizeNationalId('Nigeria', '70391845226'), 'NIGERIA:70391845226');
 });
 
 test('a live application holds the identity keys; an ended one does not', () => {
