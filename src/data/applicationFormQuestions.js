@@ -14,7 +14,7 @@ const { PATHWAY_ELIGIBILITY } = require("./pathwayEligibility");
  * Source files received 29 September 2026:
  *  - Physical Academy V4-reviewed
  *  - Virtual Academy V4-reviewed
- *  - Digital Entrepreneurship V4
+ *  - Digital Entrepreneurship V4 (replaced by the revised V4, Form DF-03, received 26 November 2026)
  *
  * Applicant-facing wording follows the supplied forms. Where the source's
  * skip-logic references conflict with its option numbering, the condition is
@@ -25,7 +25,7 @@ const { PATHWAY_ELIGIBILITY } = require("./pathwayEligibility");
 const FORM_VERSIONS = {
   PHYSICAL_ACADEMY: "DF-01-PHYSICAL-ACADEMY-V4-2026-09-29",
   VIRTUAL_ACADEMY: "DF-01-VIRTUAL-ACADEMY-V4-2026-09-29",
-  DIGITAL_ENTREPRENEURSHIP: "DF-01-DIGITAL-ENTREPRENEURSHIP-V4-2026-09-29",
+  DIGITAL_ENTREPRENEURSHIP: "DF-03-DIGITAL-ENTREPRENEURSHIP-V4-2026-11-26",
 };
 
 const PATHWAY_TITLES = {
@@ -899,8 +899,8 @@ const virtualQuestions = academyQuestions("VIRTUAL_ACADEMY");
 const ENTREPRENEUR_ELIGIBILITY_SECTION = "Section 1: Eligibility Criteria";
 const ENTREPRENEUR_PERSONAL_SECTION = "Section 2: Personal & contact details";
 const ENTREPRENEUR_PRIOR_SECTION = "Section 3: Prior Engagement with Sightsavers";
-const ENTREPRENEUR_ACCESS_SECTION = "Section 4: Access to device, internet and electricity";
-const ENTREPRENEUR_MOTIVATION_SECTION = "Section 5: Motivation & Training Readiness";
+const ENTREPRENEUR_MOTIVATION_SECTION = "Section 4: Motivation & Training Readiness";
+const ENTREPRENEUR_ACCESS_SECTION = "Section 5: Access to device, internet and electricity";
 
 const entrepreneurshipBaseQuestions = [
   ...setupQuestions("DIGITAL_ENTREPRENEURSHIP"),
@@ -939,28 +939,11 @@ const entrepreneurshipBaseQuestions = [
     accessibilityOtherNumber: 9,
     section: ENTREPRENEUR_ELIGIBILITY_SECTION,
   }),
-  ...identityQuestions({
-    firstNameNumber: 10,
-    middleNameNumber: 11,
-    lastNameNumber: 12,
-    sexNumber: 13,
-    dobNumber: 14,
-    idTypeNumber: 15,
-    nationalIdNumber: 16,
-    cardNumber: 17,
-    phoneNumber: 18,
-    alternativePhoneNumber: 19,
-    emailNumber: 20,
-    contactMethodNumber: 21,
-    contactOtherNumber: 22,
-    section: ENTREPRENEUR_PERSONAL_SECTION,
-    ageMax: 45,
-  }),
   ...locationQuestions({
-    countryNumber: 23,
-    levelOneNumber: 24,
-    levelTwoNumber: 25,
-    townNumber: 26,
+    countryNumber: 10,
+    levelOneNumber: 11,
+    levelTwoNumber: 12,
+    townNumber: 13,
     section: ENTREPRENEUR_PERSONAL_SECTION,
     countryHelp: "Ask all. Drives the country-specific formats used for ID and phone questions.",
   }).map((question, index) => ({
@@ -972,6 +955,23 @@ const entrepreneurshipBaseQuestions = [
       } : {}),
     },
   })),
+  ...identityQuestions({
+    firstNameNumber: 14,
+    middleNameNumber: 15,
+    lastNameNumber: 16,
+    sexNumber: 17,
+    dobNumber: 18,
+    idTypeNumber: 19,
+    nationalIdNumber: 20,
+    cardNumber: 21,
+    phoneNumber: 22,
+    alternativePhoneNumber: 23,
+    emailNumber: 24,
+    contactMethodNumber: 25,
+    contactOtherNumber: 26,
+    section: ENTREPRENEUR_PERSONAL_SECTION,
+    ageMax: 45,
+  }),
   ...priorEngagementQuestions({
     participatedNumber: 27,
     trainingNumber: 28,
@@ -981,132 +981,206 @@ const entrepreneurshipBaseQuestions = [
   }),
 ];
 
-// Questions 30 onward: access (new), then motivation renumbered after it, then "How did you hear".
+// Section 4 (Q30–Q38 in the V4 form received 26 November 2026). Three answers end the application:
+// no business or idea yet (Q30), not an owner or co-owner (Q31), and not wanting to use digital tools (Q35).
+// Each such question carries its rule in metadata, so the form and the server apply the same check.
+const BUSINESS_STAGE_NONE = "I do not have a business or a business idea yet.";
+const BUSINESS_STAGE_OPTIONS = [
+  "I have a business idea, but I have not started the business yet.",
+  "I have started setting up my business, but I have not made any sales yet.",
+  "I have started my business and have made some sales.",
+  "I have an established business with regular customers or sales.",
+  BUSINESS_STAGE_NONE,
+];
+const BUSINESS_ROLE_WITH_OTHERS = "I am starting or running this business with one or more other people.";
+const BUSINESS_ROLE_NOT_OWNER = [
+  "I am an employee of the business but do not own or co-own it.",
+  "I am applying on behalf of a business or organisation that I do not own or co-own.",
+  "None of these.",
+];
+const BUSINESS_TYPE_OTHER = "Other type of business. Please specify";
+const DIGITAL_TOOLS_NOT_WANTED = "I do not want to use digital tools in my business.";
+
 const entrepreneurshipMotivationQuestions = [
   {
-    questionNumber: 30,
-    questionCode: "DIGITAL_ENTERPRISE_CHARACTERISTICS",
-    questionText: "Which of these describe your digital enterprise? (choose all that apply)",
+    questionCode: "BUSINESS_STAGE",
+    questionText: "Which best describes where you are with your business?",
+    section: ENTREPRENEUR_MOTIVATION_SECTION,
+    responseType: "SINGLE_SELECT",
+    required: true,
+    options: BUSINESS_STAGE_OPTIONS,
+    metadata: {
+      ineligibleAnswers: [BUSINESS_STAGE_NONE],
+      ineligibleReasonCode: "ENTREPRENEURSHIP_BUSINESS_IDEA_REQUIRED",
+      ineligibleFeedback: {
+        title: "You need a business or a business idea for this pathway.",
+        message:
+          "Digital Entrepreneurship helps people start or grow their own business. To apply, you need at least a business idea. You can change your answer if it was not right. When you have an idea, you are welcome to apply.",
+      },
+    },
+  },
+  {
+    questionCode: "BUSINESS_ROLE",
+    questionText: "Which best describes your role in this business or business idea?",
+    section: ENTREPRENEUR_MOTIVATION_SECTION,
+    responseType: "SINGLE_SELECT",
+    required: true,
+    options: [
+      "I am starting or running this business by myself.",
+      BUSINESS_ROLE_WITH_OTHERS,
+      ...BUSINESS_ROLE_NOT_OWNER,
+    ],
+    metadata: {
+      ineligibleAnswers: BUSINESS_ROLE_NOT_OWNER,
+      ineligibleReasonCode: "ENTREPRENEURSHIP_OWNERSHIP_REQUIRED",
+      ineligibleFeedback: {
+        title: "This pathway is for people who own the business.",
+        message:
+          "You must be starting or running the business yourself, alone or with other people. You can change your answer if it was not right.",
+      },
+    },
+  },
+  {
+    questionCode: "BUSINESS_OWNER_COUNT",
+    questionText: "How many people are starting or running the business as owners?",
+    section: ENTREPRENEUR_MOTIVATION_SECTION,
+    responseType: "SINGLE_SELECT",
+    required: true,
+    options: ["Just me.", "Me and one other person.", "Me and two or more other people."],
+    showIf: { questionCode: "BUSINESS_ROLE", operator: "equals", value: BUSINESS_ROLE_WITH_OTHERS },
+  },
+  {
+    questionCode: "BUSINESS_TYPE",
+    questionText: "Which best describes your business or business idea?",
+    section: ENTREPRENEUR_MOTIVATION_SECTION,
+    responseType: "SINGLE_SELECT",
+    required: true,
+    options: [
+      "Selling goods or products.",
+      "Making or manufacturing goods or products.",
+      "Providing services to people or businesses.",
+      "Creating content or working as a content creator or influencer.",
+      "Providing technology or digital services.",
+      BUSINESS_TYPE_OTHER,
+    ],
+  },
+  {
+    questionCode: "BUSINESS_TYPE_OTHER",
+    questionText: "If Other, please specify",
+    section: ENTREPRENEUR_MOTIVATION_SECTION,
+    responseType: "TEXT",
+    required: true,
+    showIf: { questionCode: "BUSINESS_TYPE", operator: "equals", value: BUSINESS_TYPE_OTHER },
+  },
+  {
+    questionCode: "CURRENT_DIGITAL_TOOL_USE",
+    questionText: "How do you currently use digital tools in your business? Select all that apply.",
     section: ENTREPRENEUR_MOTIVATION_SECTION,
     responseType: "MULTI_SELECT",
     required: true,
     options: [
-      "Uses digital platforms for customer engagement and service delivery.",
-      "Employs digital tools for business operations, service delivery, or management.",
-      "Offers digitally enabled products or services.",
-      "Utilizes digital payment systems and financial technologies",
-      "Only uses digital tools for personal use not directly for the business.",
+      "Advertising or promoting my business online or on social media.",
+      "Communicating with customers or taking orders/bookings digitally.",
+      "Selling products or services online.",
+      "Receiving or making digital payments.",
+      "Keeping records of sales, expenses, customers, stock or bookings.",
+      "Creating online content.",
+      "Creating or providing a digital product or service.",
+      "Using digital tools to manage or run my business.",
+      "I do not currently use digital tools in my business.",
+      "I have not started my business yet.",
     ],
+    metadata: {
+      exclusiveOptions: ["I do not currently use digital tools in my business.", "I have not started my business yet."],
+    },
+    // Only for applicants who have started setting up or running a business (Q30 options 2–4).
+    showIf: { questionCode: "BUSINESS_STAGE", operator: "in", value: BUSINESS_STAGE_OPTIONS.slice(1, 4) },
   },
   {
-    questionNumber: 31,
-    questionCode: "DIGITAL_ENTERPRISE_TYPE",
-    questionText: "What kind of digital enterprise are you about to start or grow",
+    questionCode: "DESIRED_DIGITAL_TOOL_USE",
+    questionText: "How would you like to use digital tools in your business? Select all that apply.",
     section: ENTREPRENEUR_MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
+    responseType: "MULTI_SELECT",
     required: true,
     options: [
-      "Digital-native business: The business provides a digital product or service that is created and delivered mainly through technology, such as software, an app, an online platform, digital content or an IT service.",
-      "Traditional business using digital tools: The business provides physical products or in-person services and uses, or plans to use, digital tools for activities such as marketing, sales, payments, customer service or recordkeeping",
+      "Advertise my business and reach more customers.",
+      "Communicate with customers and manage orders or bookings.",
+      "Sell products or services online.",
+      "Receive or make digital payments.",
+      "Keep better business and financial records.",
+      "Manage stock, orders, appointments or other business activities.",
+      "Create online content or grow an audience online.",
+      "Create or improve a digital product or service.",
+      "Use AI or other digital tools to help me run my business.",
+      "Research customers, markets or competitors.",
+      "Protect my business and customer information online.",
+      "I am not sure yet, but I want to learn how digital tools could help my business.",
+      DIGITAL_TOOLS_NOT_WANTED,
     ],
-  },
-  {
-    questionNumber: 32,
-    questionCode: "DIGITAL_NATIVE_CATEGORY",
-    questionText: "If digital-Native Businesses, which best describe your enterprise",
-    section: ENTREPRENEUR_MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: [
-      "Software development and IT services",
-      "Digital content creation and management",
-      "E-commerce platforms and digital marketplaces",
-      "Digital marketing and social media services",
-      "Mobile applications and solutions",
-      "Web development and hosting services",
-      "Digital educational content and e-learning",
-      "Digital financial services",
-    ],
-    showIf: {
-      questionCode: "DIGITAL_ENTERPRISE_TYPE",
-      operator: "equals",
-      value: "Digital-native business: The business provides a digital product or service that is created and delivered mainly through technology, such as software, an app, an online platform, digital content or an IT service.",
+    metadata: {
+      // Chosen on its own (it cannot be combined with another option), it ends the application.
+      exclusiveOptions: [DIGITAL_TOOLS_NOT_WANTED],
+      ineligibleAnswers: [DIGITAL_TOOLS_NOT_WANTED],
+      ineligibleReasonCode: "ENTREPRENEURSHIP_DIGITAL_TOOLS_REQUIRED",
+      ineligibleFeedback: {
+        title: "This pathway teaches you to use digital tools in your business.",
+        message:
+          "Digital Entrepreneurship is about using your phone or computer to start or grow a business. If you do not want to use digital tools, this pathway is not right for you. You can change your answer if it was not right.",
+      },
     },
   },
   {
-    questionNumber: 33,
-    questionCode: "DIGITAL_TRANSFORMED_CATEGORY",
-    questionText: "If digital-Transformed Traditional Businesses, which best described your enterprise",
+    questionCode: "TRAINING_GOALS",
+    questionText: "What would you most like this training to help you with? Select all that apply.",
     section: ENTREPRENEUR_MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
+    responseType: "MULTI_SELECT",
     required: true,
     options: [
-      "Retail businesses with e-commerce integration",
-      "Traditional services with digital delivery channels",
-      "Manufacturing with digital inventory and order management",
-      "Agriculture with digital market access and management systems",
-      "Professional services with digital client management",
-      "Traditional education with digital delivery components",
-      "Product or service delivery with digital tools (e.g. photographer/graphic designer.",
+      "Develop and test my business idea.",
+      "Start my business.",
+      "Understand my customers and market.",
+      "Find and reach more customers.",
+      "Market or promote my business online.",
+      "Sell products or services online.",
+      "Improve how I manage money, pricing, sales and expenses.",
+      "Use digital tools to manage my business.",
+      "Create or grow online content or an online audience.",
+      "Develop a digital product or service.",
+      "Use AI and other digital tools in my business.",
+      "Improve how I work with and retain customers.",
+      "Protect my business and customers when working online.",
+      "Grow my existing business.",
+      "Prepare my business for funding or investment.",
+      "None of these.",
     ],
-    showIf: {
-      questionCode: "DIGITAL_ENTERPRISE_TYPE",
-      operator: "equals",
-      value: "Traditional business using digital tools: The business provides physical products or in-person services and uses, or plans to use, digital tools for activities such as marketing, sales, payments, customer service or recordkeeping",
-    },
+    metadata: { exclusiveOptions: ["None of these."] },
   },
   {
-    questionNumber: 34,
-    questionCode: "BUSINESS_STAGE",
-    questionText: "What is the current stage of your business?",
-    section: ENTREPRENEUR_MOTIVATION_SECTION,
-    responseType: "SINGLE_SELECT",
-    required: true,
-    options: [
-      "Idea stage: I have identified a business idea, but I have not yet developed or tested the product or service.",
-      "Testing stage: I am developing or testing the product or service. I may have spoken to potential customers, created a sample or prototype, or tested the idea on a small scale, but I have not yet launched the business.",
-      "Early-stage business: I have launched the business and started offering the product or service to customers. I have made some sales, but the sales may still be small or irregular.",
-      "Growing business: My business has regular customers and sales. I am working to increase sales, reach more customers, improve operations or grow the team.",
-      "Expanding business: My business is established and is entering new markets or locations, introducing additional products or services, or seeking significant investment to expand.",
-    ],
-  },
-  {
-    questionNumber: 35,
     questionCode: "BUSINESS_DESCRIPTION",
-    questionText: "Briefly describe your business idea or existing business. What product or service do you offer or plan to offer? What problem does it solve, and how do you use or plan to use digital technology?",
+    questionText: "Describe your business idea or existing business.",
     section: ENTREPRENEUR_MOTIVATION_SECTION,
     responseType: "LONG_TEXT",
     required: true,
-    helpText: "Maximum 100 words.",
-    metadata: { maxWords: 100 },
+    helpText: "Maximum 200 words.",
+    metadata: { maxWords: 200 },
   },
   {
-    questionNumber: 36,
     questionCode: "MOTIVATION",
-    questionText: "Why do you want to join this training? Describe what you hope to learn and how the training will help you develop your business idea or grow your business.",
+    questionText: "Why do you want to join this training?",
     section: ENTREPRENEUR_MOTIVATION_SECTION,
     responseType: "LONG_TEXT",
     required: true,
-    helpText: "Maximum 150 words.",
-    metadata: { maxWords: 150 },
+    helpText: "Maximum 200 words.",
+    metadata: { maxWords: 200 },
   },
 ];
 
+// V4 order: eligibility (Q1–Q9), personal details (Q10–Q26), prior engagement (Q27–Q29), motivation
+// (Q30–Q38), then device, internet and electricity. "How did you hear" is kept at the end of motivation.
 function buildEntrepreneurshipQuestions() {
   let number = 29;
   const next = () => ++number;
   const motivationSection = ENTREPRENEUR_MOTIVATION_SECTION;
-  const access = digitalAccessQuestions(next, ENTREPRENEUR_ACCESS_SECTION, {
-    studyNote: "Most of the training is online, so you will need a device for your studies.",
-    studyHours: "about 5 hours of study per week",
-  });
-  access[0] = {
-    ...access[0],
-    metadata: {
-      ...(access[0].metadata || {}),
-      sectionIntro: "The next questions ask about your access to a device, internet and electricity, so we understand whether you have what you need for the online parts of the training and what support may help.",
-    },
-  };
   const motivation = entrepreneurshipMotivationQuestions.map((question) => ({ ...question, questionNumber: next() }));
   const heardAbout = [
     {
@@ -1154,7 +1228,11 @@ function buildEntrepreneurshipQuestions() {
       ] },
     },
   ];
-  return [...entrepreneurshipBaseQuestions, ...access, ...motivation, ...heardAbout];
+  const access = digitalAccessQuestions(next, ENTREPRENEUR_ACCESS_SECTION, {
+    studyNote: "Studies in this course will take place across all days of the week.",
+    studyHours: "about 5 hours of study per week",
+  });
+  return [...entrepreneurshipBaseQuestions, ...motivation, ...heardAbout, ...access];
 }
 
 const digitalEntrepreneurshipQuestions = buildEntrepreneurshipQuestions();

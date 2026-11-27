@@ -5,7 +5,17 @@ const registrationFormQuestions = require("../data/registrationFormQuestions");
 const {
   getApplicationQuestionsForPathway,
   getApplicationFormVersion,
+  QUESTION_SETS,
 } = registrationFormQuestions;
+
+// Reason codes and applicant messages for answers that end an application, taken from question metadata.
+const ANSWER_RULE_FEEDBACK = Object.fromEntries(
+  Object.values(QUESTION_SETS)
+    .flat()
+    .filter((question) => question.metadata?.ineligibleReasonCode)
+    .map((question) => [question.metadata.ineligibleReasonCode, () => question.metadata.ineligibleFeedback.message])
+);
+const ANSWER_RULE_REASON_CODES = Object.keys(ANSWER_RULE_FEEDBACK);
 const { getEligibilityRules } = require("../data/pathwayEligibility");
 const { COUNTRY_CONTACTS } = require("../data/physicalAcademyConsent");
 const {
@@ -747,6 +757,7 @@ const PUBLIC_ELIGIBILITY_FEEDBACK = {
     "Your education level needs to be checked against the pathway requirement, so the application needs a manual check.",
   DISABILITY_REQUIRED: () =>
     "Digital Futures is a programme for young people with disabilities. Unfortunately, you do not meet this requirement.",
+  ...ANSWER_RULE_FEEDBACK,
 };
 
 function getMinimumEducationLabel(levels = []) {
@@ -872,12 +883,20 @@ function buildDignifiedWorkResponse(responses = []) {
 
 function buildCurrentBusinessDetails(responses = []) {
   const fields = [
+    "BUSINESS_STAGE",
+    "BUSINESS_ROLE",
+    "BUSINESS_OWNER_COUNT",
+    "BUSINESS_TYPE",
+    "BUSINESS_TYPE_OTHER",
+    "CURRENT_DIGITAL_TOOL_USE",
+    "DESIRED_DIGITAL_TOOL_USE",
+    "TRAINING_GOALS",
+    "BUSINESS_DESCRIPTION",
+    // Asked by applications made before the revised V4 form (26 November 2026).
     "DIGITAL_ENTERPRISE_CHARACTERISTICS",
     "DIGITAL_ENTERPRISE_TYPE",
     "DIGITAL_NATIVE_CATEGORY",
     "DIGITAL_TRANSFORMED_CATEGORY",
-    "BUSINESS_STAGE",
-    "BUSINESS_DESCRIPTION",
   ];
 
   const values = fields.reduce((result, code) => {
@@ -906,6 +925,23 @@ function validateSubmissionConsent(responses = []) {
   }
 
   return { valid: true };
+}
+
+// Questions whose metadata lists answers that make the applicant not eligible.
+function getAnswerEligibilityRules(pathway, responses = []) {
+  if (!QUESTION_SETS[pathway]) return [];
+  return QUESTION_SETS[pathway]
+    .filter((question) => Array.isArray(question.metadata?.ineligibleAnswers) && isQuestionVisible(question, responses))
+    .map((question) => {
+      const answer = getAnswerValue(responses, question.questionCode);
+      const selected = Array.isArray(answer) ? answer : [answer];
+      return {
+        questionCode: question.questionCode,
+        reasonCode: question.metadata.ineligibleReasonCode,
+        answer,
+        ineligible: selected.some((item) => question.metadata.ineligibleAnswers.includes(item)),
+      };
+    });
 }
 
 function calculateEligibility(responses = [], applicationDate = new Date(), pathway = "UNKNOWN") {
@@ -1006,12 +1042,21 @@ function calculateEligibility(responses = [], applicationDate = new Date(), path
     reasonCodes.push("ACADEMY_AVAILABILITY_REQUIRED");
   }
 
+  // Answers the form marks as ending the application (Digital Entrepreneurship V4: no business idea,
+  // not an owner, or not wanting to use digital tools). The rule lives on the question's metadata.
+  const answerRules = getAnswerEligibilityRules(normalizedPathway, responses);
+  criterionResults.answerRules = answerRules;
+  for (const rule of answerRules) {
+    if (rule.ineligible && !reasonCodes.includes(rule.reasonCode)) reasonCodes.push(rule.reasonCode);
+  }
+
   const blockingReasonCodes = [
     "ENTREPRENEURSHIP_AVAILABILITY_REQUIRED",
     "ACADEMY_AVAILABILITY_REQUIRED",
     "ACADEMY_AGE_OUTSIDE_RANGE",
     "EDUCATION_BELOW_MINIMUM",
     "DISABILITY_REQUIRED",
+    ...ANSWER_RULE_REASON_CODES,
   ];
   const pendingReasonCodes = [
     "MISSING_AGE_INFORMATION",
